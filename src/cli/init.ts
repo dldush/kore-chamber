@@ -39,7 +39,7 @@ async function getVaultPath(rl: readline.Interface): Promise<string> {
 
   const vaultPath = await ask(
     rl,
-    "볼트 경로를 입력하세요 (옵시디언 볼트 폴더)\n> "
+    "볼트 경로를 입력하세요 (기존 옵시디언 볼트 경로 또는 새로 생성할 위치)\n> "
   );
 
   if (!vaultPath) {
