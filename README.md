@@ -83,25 +83,21 @@ Reads the session JSONL log after conversation ends. Extracts knowledge and prof
 | Bloom's Taxonomy | Education | 6-level comprehension assessment (Remember → Understand → Apply → Analyze → Evaluate → Create) |
 | Schema Theory | Cognitive Psychology | Profile updates via **Assimilation** (fits existing → append) / **Accommodation** (conflicts → replace) |
 
-#### Sentinel — Quality Gate
+#### Sentinel — Dedup Filter
 
-Verifies extracted items and **supplements incomplete ones** rather than rejecting. Fixing over discarding.
+Fast duplicate check only. No JSONL re-parsing, no supplementation. Speed over thoroughness.
 
-**Rubric (4 criteria):**
-- **Accuracy** — Cross-validates against original JSONL
-- **Completeness** — Supplements missing context from source conversation
-- **Distinctness** — Single topic per item
-- **Novelty** — Semantic comparison with vault note summaries + batch dedup
+**Rubric (2 criteria):**
+- **Novelty (vault)** — Semantic comparison with existing note summaries (frontmatter only)
+- **Novelty (batch)** — Dedup within the current extraction batch
 
 **Methodologies:**
 
 | Method | Field | Application |
 |--------|-------|-------------|
-| Cross-validation | Statistics | Compare extracted items **directly against original JSONL** — counters LLM self-assessment blind spots |
-| Triangulation | Qualitative Research | Cross-check via **3 sources**: title, content, original conversation |
-| Fuzzy Matching | Information Retrieval | **Semantic similarity** with existing note summaries instead of keyword grep |
+| Fuzzy Matching | Information Retrieval | **Semantic similarity** with existing note `summary` fields — frontmatter only for speed |
 
-> **Supplement over reject.** Incomplete items are fixed from the source conversation, not discarded.
+> JSONL cross-validation, accuracy checks, and supplementation removed. Dedup-focused for pipeline speed.
 
 #### Librarian — Placement + Storage + Connection
 
