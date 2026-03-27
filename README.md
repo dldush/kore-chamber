@@ -14,7 +14,10 @@ Your AI meets you for the first time, every time. It doesn't know what you learn
 npx kore-chamber init
 ```
 
-Or just tell your AI: **"Install kore-chamber for me."**
+Or just tell your AI: **"Install kore-chamber for me"** and paste this link:
+```
+https://raw.githubusercontent.com/dldush/kore-chamber/main/docs/guide/installation.md
+```
 
 ## Why Use It
 
