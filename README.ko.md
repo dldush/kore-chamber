@@ -98,25 +98,21 @@ CLAUDE.md가 메모라면, Kore-Chamber는 **진짜 뇌**입니다.
 | Bloom's Taxonomy | 교육학 | 대화에서 도메인별 이해 수준을 6단계(기억→이해→적용→분석→평가→창조)로 판별 |
 | Schema Theory | 인지 심리학 | 프로필 업데이트 시 **Assimilation**(기존과 일치→추가) / **Accommodation**(충돌→교체) 전략 |
 
-#### Sentinel — 품질 게이트
+#### Sentinel — 중복 필터
 
-스캐빈저가 추출한 지식 항목을 검증하고, 불완전하면 **보완**합니다. 버리는 것보다 고치는 것을 우선.
+볼트와 배치 내 중복만 빠르게 체크합니다. 속도 우선 — 스캐빈저가 이미 품질 있는 추출을 했으므로.
 
-**루브릭 (4기준):**
-- **Accuracy** — 원본 JSONL을 직접 대조하여 정확성 교차 검증
-- **Completeness** — 불완전하면 원본 대화에서 빠진 맥락을 찾아 보완
-- **Distinctness** — 하나의 주제인가
-- **Novelty** — 기존 노트의 `summary`와 의미적 비교 + 배치 내 중복 체크
+**루브릭 (2기준):**
+- **Novelty (볼트)** — 기존 노트의 `summary`와 의미적 비교 (frontmatter만 읽음)
+- **Novelty (배치)** — 같은 배치 내 항목 간 중복 체크
 
 **적용 방법론:**
 
 | 방법론 | 분야 | 적용 |
 |--------|------|------|
-| Cross-validation | 통계학 | 추출 항목을 **원본 JSONL의 해당 부분과 직접 대조** — LLM 자기 평가의 blind spot 보완 |
-| Triangulation | 질적 연구 | 제목, 내용, 원본 대화 **3개 소스를 교차 확인**하여 왜곡/환각 감지 |
-| Fuzzy matching | 정보 검색 | 키워드 exact match 대신 기존 노트 `summary`와 **의미 기반 유사도 비교** |
+| Fuzzy matching | 정보 검색 | 기존 노트 `summary`와 **의미 기반 유사도 비교** — frontmatter만 읽어 속도 확보 |
 
-> **Supplement over reject.** 불완전한 항목을 버리지 않고, 원본 대화에서 빠진 맥락을 찾아 보완 후 통과시킵니다.
+> JSONL 재파싱, 교차 검증, 보완 과정 없음. 중복 필터에 집중하여 파이프라인 속도 최적화.
 
 #### Librarian — 배치 + 저장 + 연결
 
