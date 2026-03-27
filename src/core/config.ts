@@ -1,8 +1,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as yamlParse } from "yaml";
+import { homedir } from "./platform.js";
 
-const KORE_DIR = path.join(process.env.HOME!, ".kore-chamber");
+const KORE_DIR = path.join(homedir(), ".kore-chamber");
 
 export interface KoreConfig {
   vaultPath: string;

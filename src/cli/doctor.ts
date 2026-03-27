@@ -2,8 +2,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
 import { checkAuthStatus } from "../llm/claude.js";
+import { homedir, whichCommand } from "../core/platform.js";
 
-const HOME = process.env.HOME!;
+const HOME = homedir();
 const KORE_DIR = path.join(HOME, ".kore-chamber");
 const CLAUDE_DIR = path.join(HOME, ".claude");
 
@@ -160,7 +161,7 @@ function checkAgents(): Check {
 
 function checkClaudeCLI(): Check {
   try {
-    const result = execSync("which claude", { encoding: "utf-8" }).trim();
+    const result = execSync(whichCommand("claude"), { encoding: "utf-8" }).trim();
     return { label: "Claude Code CLI", ok: true, detail: result };
   } catch {
     return { label: "Claude Code CLI", ok: false, detail: "설치되지 않음" };

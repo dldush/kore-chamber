@@ -4,9 +4,10 @@ import * as readline from "node:readline";
 import { execSync } from "node:child_process";
 import { stringify as yamlStringify } from "yaml";
 import { checkAuthStatus, doLogin } from "../llm/claude.js";
+import { homedir, whichCommand } from "../core/platform.js";
 
-const KORE_DIR = path.join(process.env.HOME!, ".kore-chamber");
-const CLAUDE_DIR = path.join(process.env.HOME!, ".claude");
+const KORE_DIR = path.join(homedir(), ".kore-chamber");
+const CLAUDE_DIR = path.join(homedir(), ".claude");
 
 // ─── Prompts ───
 
@@ -47,7 +48,7 @@ async function getVaultPath(rl: readline.Interface): Promise<string> {
     process.exit(1);
   }
 
-  const resolved = path.resolve(vaultPath.replace(/^~/, process.env.HOME!));
+  const resolved = path.resolve(vaultPath.replace(/^~/, homedir()));
   if (!fs.existsSync(resolved)) {
     console.log(`📁 폴더가 없습니다. 생성합니다: ${resolved}`);
     fs.mkdirSync(resolved, { recursive: true });
@@ -326,7 +327,7 @@ export async function runInit() {
     // Claude CLI 존재 확인
     console.log("🔍 Claude Code CLI 확인:");
     try {
-      const claudePath = execSync("which claude", { encoding: "utf-8" }).trim();
+      const claudePath = execSync(whichCommand("claude"), { encoding: "utf-8" }).trim();
       console.log(`  ✅ ${claudePath}\n`);
     } catch {
       console.error("  ❌ Claude Code CLI가 설치되지 않았습니다.");

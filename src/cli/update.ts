@@ -1,7 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { homedir } from "../core/platform.js";
 
-const CLAUDE_DIR = path.join(process.env.HOME!, ".claude");
+const CLAUDE_DIR = path.join(homedir(), ".claude");
 
 interface InstallResult {
   commands: string[];
