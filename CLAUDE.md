@@ -38,13 +38,11 @@ vault/
 ├── 30-Decisions/       ← "Why B instead of A?"
 ├── 40-Patterns/        ← Reusable implementation
 ├── 50-MOC/             ← Domain indexes
-├── 90-Library/         ← AI-collected (agent-only, isolated)
-│   └── _index.md
 └── Templates/
 ```
 
+> No 90-Library/ staging area. Agents save directly to main vault folders (10-40).
 > Personal folders (60-Thinking, 70-Career, etc.) are NOT part of the standard structure.
-> Agents only operate on 00-50 + 90-Library. Users add personal folders freely.
 
 ## Scavenger Data Source
 
