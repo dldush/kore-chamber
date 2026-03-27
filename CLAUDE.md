@@ -9,16 +9,17 @@ AI-powered knowledge chamber for Obsidian vaults. Multi-agent system built on Cl
 - **Config**: `~/.kore-chamber/config.yaml` (vault path)
 - **Design doc**: Obsidian `70-Career/Projects/Kore-Chamber.md`
 
-## Architecture
+## Architecture: 2-Skill System
 
 ```
-Skills (user-facing)          Agents (subagents)
-─────────────────────         ──────────────────
-/kc-promote                → librarian (type classify + MOC place + dedup)
-/kc-seek (future)          → seeker → sentinel → judge → librarian
-/kc-explore (future)       → judge + librarian
-/kc-connect (future)       → librarian
+Skills (user-facing)              Agents (auto pipeline)
+──────────────────────            ─────────────────────
+/kc-explore (session start)    → librarian (promote candidates) + LLM (gap analysis)
+/kc-collect (session end)      → scavenger → sentinel → judge → librarian → connect
 ```
+
+- **explore**: Vault briefing + promote candidates + gap analysis
+- **collect**: Harvest conversation context → auto pipeline → 90-Library/
 
 ## Agent Prompt Language
 
@@ -45,6 +46,11 @@ vault/
 > Personal folders (60-Thinking, 70-Career, etc.) are NOT part of the standard structure.
 > Agents only operate on 00-50 + 90-Library. Users add personal folders freely.
 
+## Scavenger Data Source
+
+Scavenger reads the session JSONL log (`~/.claude/projects/<project>/<session>.jsonl`).
+Context compression does not affect the log — full conversation is preserved.
+
 ## Type Classification (Binary Decision Chain)
 
 1. "Error → Cause → Fix" structure? → **Troubleshooting**
@@ -57,11 +63,9 @@ vault/
 
 - [x] Repo scaffolding
 - [x] Librarian agent prototype
-- [x] kc-promote skill prototype
-- [ ] Seeker + Sentinel + Judge agents
-- [ ] kc-seek skill
-- [ ] kc-explore skill (kill feature)
-- [ ] kc-connect skill (kill feature)
+- [x] kc-promote skill prototype (to be absorbed into explore)
+- [ ] Scavenger + Sentinel + Judge agents
+- [ ] kc-collect skill
+- [ ] kc-explore skill
 - [ ] init CLI script (npx kore-chamber init)
-- [ ] Cleaner agent
 - [ ] Librarian v2 (embeddings)
