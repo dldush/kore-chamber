@@ -66,16 +66,18 @@ npx kore-chamber init
 
 `init` does the following:
 
-1. Creates the vault path and base folder structure
-2. Asks about your field, level, goals, learning style, and deep interests
-3. Collects existing Claude transcript paths and stores them in `config.yaml`
-4. Installs Claude Code commands, skills, and agents
+1. Checks that Claude Code CLI is installed
+2. Verifies Claude OAuth login (opens browser if not logged in)
+3. Creates the vault path and base folder structure
+4. Asks about your field, level, goals, learning style, and deep interests
+5. Collects existing Claude transcript paths and stores them in `config.yaml`
+6. Installs Claude Code commands, skills, and agents
    - `~/.claude/commands/kc-init.md`
    - `~/.claude/commands/kc-explore.md`
    - `~/.claude/skills/kc-collect/`
    - `~/.claude/agents/*.md`
-5. Adds your vault path to Claude Code settings
-6. Inserts global vault reference rules into `~/.claude/CLAUDE.md`
+7. Adds your vault path to Claude Code settings
+8. Inserts global vault reference rules into `~/.claude/CLAUDE.md`
 
 ### 2. Generate the initial profile
 

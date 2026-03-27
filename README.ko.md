@@ -66,16 +66,18 @@ npx kore-chamber init
 
 `init`이 수행하는 일:
 
-1. 볼트 경로를 입력받고 기본 폴더 구조를 생성합니다.
-2. 분야, 수준, 목표, 학습 스타일, 깊이 관심사를 질문합니다.
-3. 기존 Claude 대화 로그 경로를 수집해 `config.yaml`에 저장합니다.
-4. Claude Code용 명령/스킬/에이전트를 설치합니다.
+1. Claude Code CLI 설치 여부를 확인합니다.
+2. Claude OAuth 로그인을 확인합니다 (미로그인 시 브라우저가 열립니다).
+3. 볼트 경로를 입력받고 기본 폴더 구조를 생성합니다.
+4. 분야, 수준, 목표, 학습 스타일, 깊이 관심사를 질문합니다.
+5. 기존 Claude 대화 로그 경로를 수집해 `config.yaml`에 저장합니다.
+6. Claude Code용 명령/스킬/에이전트를 설치합니다.
    - `~/.claude/commands/kc-init.md`
    - `~/.claude/commands/kc-explore.md`
    - `~/.claude/skills/kc-collect/`
    - `~/.claude/agents/*.md`
-5. 볼트 접근 경로를 Claude Code 설정에 추가합니다.
-6. 전역 `~/.claude/CLAUDE.md`에 볼트 참조 규칙을 삽입합니다.
+7. 볼트 접근 경로를 Claude Code 설정에 추가합니다.
+8. 전역 `~/.claude/CLAUDE.md`에 볼트 참조 규칙을 삽입합니다.
 
 ### 2. 초기 프로필 생성
 

@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
+import { checkAuthStatus } from "../llm/claude.js";
 
 const HOME = process.env.HOME!;
 const KORE_DIR = path.join(HOME, ".kore-chamber");
@@ -22,9 +23,11 @@ export async function runDoctor() {
     checkVaultStructure(),
     checkProfile(),
     checkAIGuide(),
+    checkCommands(),
     checkSkills(),
     checkAgents(),
     checkClaudeCLI(),
+    checkClaudeAuth(),
   ];
 
   let hasError = false;
@@ -119,13 +122,25 @@ function checkAIGuide(): Check {
   return checkFile("AI-GUIDE.md", guidePath);
 }
 
-function checkSkills(): Check {
-  const skills = ["kc-init.md", "kc-collect.md", "kc-explore.md"];
+function checkCommands(): Check {
+  const commands = ["kc-init.md", "kc-explore.md"];
   const dir = path.join(CLAUDE_DIR, "commands");
-  const missing = skills.filter((f) => !fs.existsSync(path.join(dir, f)));
+  const missing = commands.filter((f) => !fs.existsSync(path.join(dir, f)));
 
   return {
-    label: "스킬 (commands)",
+    label: "커맨드 (commands)",
+    ok: missing.length === 0,
+    detail: missing.length > 0 ? `누락: ${missing.join(", ")}` : `${commands.length}개 설치됨`,
+  };
+}
+
+function checkSkills(): Check {
+  const skills = ["kc-collect"];
+  const dir = path.join(CLAUDE_DIR, "skills");
+  const missing = skills.filter((f) => !fs.existsSync(path.join(dir, f, "SKILL.md")));
+
+  return {
+    label: "스킬 (skills)",
     ok: missing.length === 0,
     detail: missing.length > 0 ? `누락: ${missing.join(", ")}` : `${skills.length}개 설치됨`,
   };
@@ -150,4 +165,17 @@ function checkClaudeCLI(): Check {
   } catch {
     return { label: "Claude Code CLI", ok: false, detail: "설치되지 않음" };
   }
+}
+
+function checkClaudeAuth(): Check {
+  const status = checkAuthStatus();
+  if (status.loggedIn) {
+    const detail = [status.email, status.authMethod].filter(Boolean).join(" / ");
+    return { label: "Claude 인증", ok: true, detail };
+  }
+  return {
+    label: "Claude 인증",
+    ok: false,
+    detail: "로그인 안 됨 — `claude login` 실행 필요",
+  };
 }

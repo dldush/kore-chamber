@@ -1,7 +1,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline";
+import { execSync } from "node:child_process";
 import { stringify as yamlStringify } from "yaml";
+import { checkAuthStatus, doLogin } from "../llm/claude.js";
 
 const KORE_DIR = path.join(process.env.HOME!, ".kore-chamber");
 const CLAUDE_DIR = path.join(process.env.HOME!, ".claude");
@@ -320,6 +322,37 @@ export async function runInit() {
     const answers = await collectAnswers(rl, vaultPath);
 
     console.log("\n━━━ 설치 중 ━━━\n");
+
+    // Claude CLI 존재 확인
+    console.log("🔍 Claude Code CLI 확인:");
+    try {
+      const claudePath = execSync("which claude", { encoding: "utf-8" }).trim();
+      console.log(`  ✅ ${claudePath}\n`);
+    } catch {
+      console.error("  ❌ Claude Code CLI가 설치되지 않았습니다.");
+      console.error("     https://docs.anthropic.com/en/docs/claude-code 에서 설치하세요.\n");
+      process.exit(1);
+    }
+
+    // Claude OAuth 인증 확인
+    console.log("🔑 Claude 인증 확인:");
+    const authStatus = checkAuthStatus();
+    if (authStatus.loggedIn) {
+      console.log(`  ✅ 로그인됨 (${authStatus.email ?? authStatus.authMethod ?? ""})\n`);
+    } else {
+      const loginOk = doLogin();
+      if (!loginOk) {
+        console.error("  ❌ Claude 로그인에 실패했습니다.");
+        console.error("     터미널에서 `claude login`을 직접 실행해보세요.\n");
+        process.exit(1);
+      }
+      const after = checkAuthStatus();
+      if (!after.loggedIn) {
+        console.error("  ❌ 로그인 후에도 인증이 확인되지 않습니다.\n");
+        process.exit(1);
+      }
+      console.log(`  ✅ 로그인 완료 (${after.email ?? ""})\n`);
+    }
 
     console.log("📂 볼트 구조 생성:");
     createVaultStructure(vaultPath);
