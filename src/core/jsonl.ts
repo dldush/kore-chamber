@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { homedir } from "./platform.js";
 
 // ─── Types ───
 
@@ -40,7 +41,7 @@ const NOISE_PATTERNS = [
 // ─── Find JSONL ───
 
 export function findLatestJsonl(sessionId?: string): string {
-  const claudeDir = path.join(process.env.HOME!, ".claude");
+  const claudeDir = path.join(homedir(), ".claude");
   const projectsDir = path.join(claudeDir, "projects");
 
   if (!fs.existsSync(projectsDir)) {
