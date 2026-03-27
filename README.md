@@ -8,6 +8,14 @@
 
 Your AI meets you for the first time, every time. It doesn't know what you learned yesterday, what level you're at, or where you're headed. Kore-Chamber breaks this limit.
 
+## Get Started
+
+```bash
+npx kore-chamber init
+```
+
+Or just tell your AI: **"Install kore-chamber for me."**
+
 ## Why Use It
 
 - **Your AI remembers you.** Across sessions, your AI knows your level, goals, and preferences. No more "I'm a frontend developer and..." every conversation.
@@ -136,11 +144,7 @@ Shows what you don't know. Fast — reads MOC files only, no individual note sca
 
 > No dependency trees, no topology analysis, no note sampling. MOCs → goals → gaps → recommendations. Speed over exhaustiveness.
 
-## Installation
-
-```bash
-npx kore-chamber init
-```
+## What Happens During Init
 
 1. Set vault path
 2. Answer 5 questions (field, level, goals, learning style, deep interests)
