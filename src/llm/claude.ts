@@ -1,4 +1,6 @@
 import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { execSync, spawnSync } from "node:child_process";
 
 // ─── Auth ───
@@ -11,14 +13,15 @@ interface AuthStatus {
 
 /**
  * Check Claude CLI auth status without making an API call.
+ * Uses shell: true for Windows compatibility.
  */
 export function checkAuthStatus(): AuthStatus {
   try {
-    const result = execSync("claude auth status", {
-      encoding: "utf-8",
+    const buf = execSync("claude auth status", {
       timeout: 10_000,
       stdio: ["pipe", "pipe", "pipe"],
     });
+    const result = buf.toString("utf-8");
     const parsed = JSON.parse(result);
     return {
       loggedIn: parsed.loggedIn === true,
@@ -33,12 +36,14 @@ export function checkAuthStatus(): AuthStatus {
 /**
  * Launch interactive Claude OAuth login.
  * stdio is inherited so the user sees the browser prompt.
+ * shell: true required for Windows.
  */
 export function doLogin(): boolean {
-  console.log("\n🔑 Claude 로그인이 필요합니다. 브라우저가 열립니다...\n");
+  console.log("\n🔑 Claude login required. Opening browser...\n");
   const result = spawnSync("claude", ["login"], {
     stdio: "inherit",
     timeout: 120_000,
+    shell: true,
   });
   return result.status === 0;
 }
@@ -58,8 +63,7 @@ export function ensureAuth(): void {
   const loginOk = doLogin();
   if (!loginOk) {
     throw new Error(
-      "Claude 로그인에 실패했습니다.\n" +
-      "터미널에서 `claude login`을 직접 실행해보세요."
+      'Claude login failed.\nTry running "claude login" manually in your terminal.'
     );
   }
 
@@ -67,12 +71,11 @@ export function ensureAuth(): void {
   const after = checkAuthStatus();
   if (!after.loggedIn) {
     throw new Error(
-      "Claude 로그인 후에도 인증이 확인되지 않습니다.\n" +
-      "터미널에서 `claude auth status`로 상태를 확인해보세요."
+      'Could not verify authentication after login.\nRun "claude auth status" to check.'
     );
   }
 
-  console.log(`✅ Claude 인증 완료 (${after.email ?? ""})\n`);
+  console.log(`✅ Claude authenticated (${after.email ?? ""})\n`);
 }
 
 /**
@@ -129,7 +132,7 @@ async function queryLLMInner<T>(
 
 function queryViaCLI<T>(prompt: string, jsonSchema: Record<string, unknown>): T {
   const schemaStr = JSON.stringify(jsonSchema);
-  const tmpFile = `/tmp/kc-prompt-${Date.now()}.txt`;
+  const tmpFile = path.join(os.tmpdir(), `kc-prompt-${Date.now()}.txt`);
   fs.writeFileSync(tmpFile, prompt);
 
   try {
