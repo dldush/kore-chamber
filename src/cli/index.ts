@@ -32,5 +32,6 @@ switch (command) {
     console.log("Collect options:");
     console.log("  --dry-run           실제 저장 없이 계획만 표시");
     console.log("  --session <id>      특정 세션 JSONL 지정");
+    console.log("  --output <format>   json 또는 markdown (기본: markdown)");
     process.exit(1);
 }
