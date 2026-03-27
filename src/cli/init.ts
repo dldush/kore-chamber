@@ -141,20 +141,38 @@ function createVaultStructure(vaultPath: string): void {
 function installClaudeFiles(): void {
   const commandsDir = path.join(CLAUDE_DIR, "commands");
   const agentsDir = path.join(CLAUDE_DIR, "agents");
+  const skillsDir = path.join(CLAUDE_DIR, "skills");
   fs.mkdirSync(commandsDir, { recursive: true });
   fs.mkdirSync(agentsDir, { recursive: true });
+  fs.mkdirSync(skillsDir, { recursive: true });
 
-  // Skills
-  const skillsSource = path.join(import.meta.dirname, "../../.claude/commands");
+  // Commands (kc-init, kc-explore — NOT kc-collect which is now a skill)
+  const commandsSource = path.join(import.meta.dirname, "../../.claude/commands");
+  if (fs.existsSync(commandsSource)) {
+    for (const file of fs.readdirSync(commandsSource)) {
+      if (!file.endsWith(".md")) continue;
+      if (file === "kc-collect.md") continue; // migrated to skill
+      fs.copyFileSync(
+        path.join(commandsSource, file),
+        path.join(commandsDir, file)
+      );
+      console.log(`  ⚡ ~/.claude/commands/${file}`);
+    }
+  }
+
+  // Skills (directory-based)
+  const skillsSource = path.join(import.meta.dirname, "../../.claude/skills");
   if (fs.existsSync(skillsSource)) {
-    for (const file of fs.readdirSync(skillsSource)) {
-      if (file.endsWith(".md")) {
-        fs.copyFileSync(
-          path.join(skillsSource, file),
-          path.join(commandsDir, file)
-        );
-        console.log(`  ⚡ ~/.claude/commands/${file}`);
+    for (const entry of fs.readdirSync(skillsSource, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const srcDir = path.join(skillsSource, entry.name);
+      const destDir = path.join(skillsDir, entry.name);
+      fs.mkdirSync(destDir, { recursive: true });
+
+      for (const file of fs.readdirSync(srcDir)) {
+        fs.copyFileSync(path.join(srcDir, file), path.join(destDir, file));
       }
+      console.log(`  ⚡ ~/.claude/skills/${entry.name}/`);
     }
   }
 

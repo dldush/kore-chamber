@@ -3,25 +3,63 @@ import * as path from "node:path";
 
 const CLAUDE_DIR = path.join(process.env.HOME!, ".claude");
 
-function installClaudeFiles(): { skills: string[]; agents: string[] } {
+interface InstallResult {
+  commands: string[];
+  skills: string[];
+  agents: string[];
+  removed: string[];
+}
+
+function installClaudeFiles(): InstallResult {
   const commandsDir = path.join(CLAUDE_DIR, "commands");
   const agentsDir = path.join(CLAUDE_DIR, "agents");
+  const skillsDir = path.join(CLAUDE_DIR, "skills");
   fs.mkdirSync(commandsDir, { recursive: true });
   fs.mkdirSync(agentsDir, { recursive: true });
+  fs.mkdirSync(skillsDir, { recursive: true });
 
-  const installed = { skills: [] as string[], agents: [] as string[] };
+  const result: InstallResult = {
+    commands: [],
+    skills: [],
+    agents: [],
+    removed: [],
+  };
 
-  // Skills
-  const skillsSource = path.join(import.meta.dirname, "../../.claude/commands");
-  if (fs.existsSync(skillsSource)) {
-    for (const file of fs.readdirSync(skillsSource)) {
-      if (file.endsWith(".md")) {
-        fs.copyFileSync(
-          path.join(skillsSource, file),
-          path.join(commandsDir, file)
-        );
-        installed.skills.push(file);
+  // Legacy commands (kc-init, kc-explore — NOT kc-collect)
+  const commandsSource = path.join(import.meta.dirname, "../../.claude/commands");
+  if (fs.existsSync(commandsSource)) {
+    for (const file of fs.readdirSync(commandsSource)) {
+      if (!file.endsWith(".md")) continue;
+      // kc-collect is now a skill, remove old command version
+      if (file === "kc-collect.md") {
+        const oldPath = path.join(commandsDir, file);
+        if (fs.existsSync(oldPath)) {
+          fs.unlinkSync(oldPath);
+          result.removed.push(`~/.claude/commands/${file}`);
+        }
+        continue;
       }
+      fs.copyFileSync(
+        path.join(commandsSource, file),
+        path.join(commandsDir, file)
+      );
+      result.commands.push(file);
+    }
+  }
+
+  // Skills (new format — directory-based)
+  const skillsSource = path.join(import.meta.dirname, "../../.claude/skills");
+  if (fs.existsSync(skillsSource)) {
+    for (const entry of fs.readdirSync(skillsSource, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const srcDir = path.join(skillsSource, entry.name);
+      const destDir = path.join(skillsDir, entry.name);
+      fs.mkdirSync(destDir, { recursive: true });
+
+      for (const file of fs.readdirSync(srcDir)) {
+        fs.copyFileSync(path.join(srcDir, file), path.join(destDir, file));
+      }
+      result.skills.push(entry.name);
     }
   }
 
@@ -34,12 +72,12 @@ function installClaudeFiles(): { skills: string[]; agents: string[] } {
           path.join(agentsSource, file),
           path.join(agentsDir, file)
         );
-        installed.agents.push(file);
+        result.agents.push(file);
       }
     }
   }
 
-  return installed;
+  return result;
 }
 
 function getVersion(): string {
@@ -54,13 +92,25 @@ export async function runUpdate() {
   const version = getVersion();
   console.log(`\n🔄 Kore Chamber — update (v${version})\n`);
 
-  const installed = installClaudeFiles();
+  const result = installClaudeFiles();
 
-  console.log("⚡ Skills:");
-  for (const f of installed.skills) console.log(`  ✅ ~/.claude/commands/${f}`);
+  if (result.commands.length > 0) {
+    console.log("⚡ Commands:");
+    for (const f of result.commands) console.log(`  ✅ ~/.claude/commands/${f}`);
+  }
+
+  if (result.skills.length > 0) {
+    console.log("\n⚡ Skills:");
+    for (const f of result.skills) console.log(`  ✅ ~/.claude/skills/${f}/`);
+  }
 
   console.log("\n🤖 Agents:");
-  for (const f of installed.agents) console.log(`  ✅ ~/.claude/agents/${f}`);
+  for (const f of result.agents) console.log(`  ✅ ~/.claude/agents/${f}`);
+
+  if (result.removed.length > 0) {
+    console.log("\n🗑️  Removed (migrated to skills):");
+    for (const f of result.removed) console.log(`  ❌ ${f}`);
+  }
 
   console.log(`\n━━━ 업데이트 완료 (v${version}) ━━━\n`);
 }
