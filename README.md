@@ -48,11 +48,11 @@ https://raw.githubusercontent.com/dldush/kore-chamber/main/docs/guide/installati
                               ↓
                     As vault grows, AI understands you deeper
                               ↓
-[When stuck] /kc-explore → "Here's what you don't know"
+[When stuck] /kc-explore → "Here's what you don't know" (WIP — being refined)
 ```
 
 - **collect**: Auto-extracts concepts, troubleshooting, decisions, patterns + profile updates → verifies → classifies → stores → connects
-- **explore**: Shows gaps between your goals and your vault. Turns unknown unknowns into known unknowns
+- **explore** (WIP): Shows gaps between your goals and your vault. Turns unknown unknowns into known unknowns
 
 ## Beyond CLAUDE.md
 

@@ -48,11 +48,11 @@ https://raw.githubusercontent.com/dldush/kore-chamber/main/docs/guide/installati
                               ↓
                     볼트가 쌓일수록 AI가 당신을 이해
                               ↓
-[막힐 때] /kc-explore → "당신은 이걸 모르고 있습니다"
+[막힐 때] /kc-explore → "당신은 이걸 모르고 있습니다" (WIP — 고도화 중)
 ```
 
 - **collect**: 대화에서 지식 + 사용자 프로필을 자동 추출 → 검증 → 분류 → 저장 → 연결
-- **explore**: 당신의 목표 대비 볼트의 빈 곳을 보여줌. unknown unknowns → known unknowns
+- **explore** (WIP): 당신의 목표 대비 볼트의 빈 곳을 보여줌. unknown unknowns → known unknowns
 
 ## CLAUDE.md의 한계를 넘어섭니다
 
