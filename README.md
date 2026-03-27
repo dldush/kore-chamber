@@ -2,6 +2,8 @@
 
 > Inspired by [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)
 
+**All this project does is install a set of agents and skills into your Claude Code. That's it.**
+
 ### Give your AI your brain.
 
 [한국어](README.ko.md)

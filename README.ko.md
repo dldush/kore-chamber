@@ -2,6 +2,8 @@
 
 > Inspired by [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)
 
+**이 프로젝트가 하는 일은 당신의 Claude Code에 에이전트와 스킬을 등록하는 것뿐입니다.**
+
 ### AI에게 나의 뇌를 선물하세요.
 
 [English](README.md)
