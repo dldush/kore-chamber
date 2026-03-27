@@ -162,6 +162,14 @@ npx kore-chamber init
 4. Claude Code에 스킬 + 에이전트 + 볼트 탐색 규칙 설치
 5. 전역 CLAUDE.md에 볼트 참조 규칙 삽입 — 모든 세션에서 AI가 당신을 알고 대화
 
+## 업데이트
+
+에이전트와 스킬이 업데이트되면 아래 명령어로 최신화할 수 있습니다. 볼트와 설정은 건드리지 않습니다.
+
+```bash
+npx kore-chamber@latest update
+```
+
 ## 볼트 탐색: Spreading Activation
 
 정적 경로(AI-GUIDE → MOC → 노트)가 아닌, **뇌 신경망의 확산 활성화** 모델로 탐색합니다.

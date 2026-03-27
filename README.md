@@ -159,6 +159,14 @@ Shows what you don't know. Fast — reads MOC files only, no individual note sca
 4. Install skills + agents + vault navigation rules into Claude Code
 5. Insert vault reference rules into global CLAUDE.md — AI knows you in every session
 
+## Update
+
+When agents and skills are updated, pull the latest with one command. Your vault and config are untouched.
+
+```bash
+npx kore-chamber@latest update
+```
+
 ## Vault Navigation: Spreading Activation
 
 Instead of static paths (AI-GUIDE → MOC → note), navigation follows the **brain's spreading activation** model.
