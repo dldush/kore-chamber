@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline";
@@ -296,7 +294,7 @@ function collectJsonlPaths(historyOption: string): string[] {
 
 // ─── Main ───
 
-async function main() {
+export async function runInit() {
   const rl = createRL();
 
   try {
@@ -340,4 +338,7 @@ async function main() {
   }
 }
 
-main().catch(console.error);
+// Direct execution (backward compat with `npx kore-chamber` without subcommand)
+if (process.argv[1]?.endsWith("init.js")) {
+  runInit().catch(console.error);
+}

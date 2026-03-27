@@ -1,6 +1,6 @@
 {
   "name": "kore-chamber",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Give your AI your brain — knowledge vault that breaks AI's context limits",
   "type": "module",
   "license": "MIT",
@@ -10,7 +10,7 @@
     "url": "https://github.com/dldush/kore-chamber"
   },
   "bin": {
-    "kore-chamber": "./dist/cli/init.js"
+    "kore-chamber": "./dist/cli/index.js"
   },
   "files": [
     "dist/",
