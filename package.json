@@ -25,11 +25,12 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.85",
     "yaml": "^2.7.0"
   },
   "devDependencies": {
-    "typescript": "^5.8.0",
+    "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
-    "@types/node": "^22.0.0"
+    "typescript": "^5.8.0"
   }
 }

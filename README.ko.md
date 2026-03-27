@@ -2,7 +2,7 @@
 
 > Inspired by [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)
 
-**이 프로젝트가 하는 일은 당신의 Claude Code에 에이전트와 스킬을 등록하는 것뿐입니다.**
+**Claude Code를 위한 하이브리드 지식 볼트 엔진**
 
 ### AI에게 나의 뇌를 선물하세요.
 
@@ -10,202 +10,272 @@
 
 > *"I know that I know nothing."* — Socrates
 
-AI는 매번 당신을 처음 만납니다. 어제 뭘 배웠는지, 지금 어떤 수준인지, 어디를 목표로 하는지 모릅니다. Kore-Chamber는 이 한계를 넘깁니다.
+## 소개
 
-## 시작하기
+Kore Chamber는 Claude Code 대화를 Markdown 볼트에 축적하는 지식 관리 엔진입니다.  
+핵심은 "AI가 전부 처리하는 프롬프트 묶음"이 아니라, **결정적인 일은 TypeScript 코어가 처리하고 의미 해석만 AI가 담당하는 하이브리드 구조**라는 점입니다.
+
+### 무엇이 달라졌나
+
+- **코드가 처리하는 일**: JSONL 파싱, 노이즈 제거, frontmatter 읽기/쓰기, 중복 검사, 파일 생성, MOC 링크, 관련 링크, 프로필 반영
+- **AI가 처리하는 일**: 지식 후보 추출, 분류 보조, 경계선 중복 판정, 병합 문안 생성, 프로필 변화 감지
+- **수집 타이밍은 사용자가 제어**: 세션 종료 시 자동 수집하지 않고, 필요할 때 명시적으로 실행합니다
+
+### 이런 문제를 해결합니다
+
+- AI와 많이 대화하지만 배운 내용이 세션이 끝나면 사라짐
+- 비슷한 질문을 다시 하느라 컨텍스트 비용이 커짐
+- 지금 내가 어디까지 이해했는지, 다음에 뭘 메워야 하는지 추적하기 어려움
+- 메모를 남기더라도 구조화, 연결, 재활용이 어려움
+
+### 동작 방식
+
+```text
+[Claude Code 대화]
+        ↓
+[/kc-collect 또는 kore-chamber collect]
+        ↓
+[TS 코어] transcript 파싱 · dedup · 저장 · 링크
+        ↓
+[AI] 지식 추출 · 분류 보조 · 프로필 변화 감지
+        ↓
+[Markdown Vault]
+  - 10-Concepts
+  - 20-Troubleshooting
+  - 30-Decisions
+  - 40-Patterns
+  - 50-MOC
+```
+
+### 한 줄 요약
+
+CLAUDE.md가 "작은 메모"라면, Kore Chamber는 **구조화된 개인 지식 그래프**입니다.
+
+## 설치방법
+
+### 요구사항
+
+- Node.js 18+
+- Claude Code CLI
+
+### 1. 초기 설치
 
 ```bash
 npx kore-chamber init
 ```
 
-아니면 AI에게 이 링크와 함께 말하세요: **"kore-chamber 설치해줘"**
-```
-https://raw.githubusercontent.com/dldush/kore-chamber/main/docs/guide/installation.md
-```
+`init`이 수행하는 일:
 
-## 왜 써야 하나
+1. Claude Code CLI 설치 여부를 확인합니다.
+2. Claude OAuth 로그인을 확인합니다 (미로그인 시 브라우저가 열립니다).
+3. 볼트 경로를 입력받고 기본 폴더 구조를 생성합니다.
+4. 분야, 수준, 목표, 학습 스타일, 깊이 관심사를 질문합니다.
+5. 기존 Claude 대화 로그 경로를 수집해 `config.yaml`에 저장합니다.
+6. Claude Code용 명령/스킬/에이전트를 설치합니다.
+   - `~/.claude/commands/kc-init.md`
+   - `~/.claude/commands/kc-explore.md`
+   - `~/.claude/skills/kc-collect/`
+   - `~/.claude/agents/*.md`
+7. 볼트 접근 경로를 Claude Code 설정에 추가합니다.
+8. 전역 `~/.claude/CLAUDE.md`에 볼트 참조 규칙을 삽입합니다.
 
-- **AI가 나를 기억합니다.** 세션이 바뀌어도 AI는 당신의 수준, 목표, 선호를 알고 대화합니다. 매번 "나는 프론트엔드 개발자고..."부터 설명할 필요 없습니다.
-- **대화만 하면 지식이 쌓입니다.** 직접 정리할 필요 없습니다. collect가 분류하고, 연결하고, 저장합니다. 당신은 배우기만 하면 됩니다.
-- **뭘 모르는지 알 수 있습니다.** explore가 당신의 목표 대비 빈 곳을 보여줍니다. "다음에 뭘 공부하지?"가 사라집니다.
-- **쓸수록 정교해집니다.** 볼트가 쌓일수록 AI의 개인화가 깊어지고, 연결이 많아지고, 갭 분석이 정밀해집니다. 노트 N개의 가능한 연결은 N×(N-1)/2 — 복리로 성장합니다.
+### 2. 초기 프로필 생성
 
-## 이런 분들을 위해
+설치가 끝나면 Claude Code 안에서 한 번 실행하세요.
 
-- AI랑 대화는 많이 하는데, **배운 게 날아가는** 분
-- 얕고 넓게 BFS로 학습하다가 **어디까지 공부했는지 컨텍스트를 잃는** 분
-- AI가 매번 나를 **처음부터 설명해야 하는 게 답답한** 분
-- **"뭘 모르는지 모르겠다"**는 순간이 있는 분
-
-## 어떻게 동작하나
-
-**평소처럼 AI와 대화하세요.** 끝날 때 `collect` 한 번이면 됩니다.
-
-```
-[평소] AI와 자유 대화 — 학습, 코딩, 트러블슈팅, 뭐든
-                              ↓
-[끝날 때] /kc-collect → 대화 속 지식이 자동으로 볼트에 저장
-                              ↓
-                    볼트가 쌓일수록 AI가 당신을 이해
-                              ↓
-[막힐 때] /kc-explore → "당신은 이걸 모르고 있습니다" (WIP — 고도화 중)
+```text
+/kc-init
 ```
 
-- **collect**: 대화에서 지식 + 사용자 프로필을 자동 추출 → 검증 → 분류 → 저장 → 연결
-- **explore** (WIP): 당신의 목표 대비 볼트의 빈 곳을 보여줌. unknown unknowns → known unknowns
+이 단계에서 `MY-PROFILE.md`와 초기 MOC가 생성됩니다.
 
-## CLAUDE.md의 한계를 넘어섭니다
-
-Claude Code의 `CLAUDE.md`와 `MEMORY.md`는 좋은 시작이지만 한계가 있습니다.
-
-| | CLAUDE.md / MEMORY.md | Kore-Chamber |
-|---|---|---|
-| **저장** | MEMORY.md 200줄 제한, CLAUDE.md는 전체 로드되나 짧게 유지 권장 | 물리적 Markdown 파일, **크기 제한 없음** |
-| **구조** | 플랫한 텍스트 | MOC + 위키링크 + frontmatter로 **구조화된 지식 그래프** |
-| **탐색** | 파일 하나를 통째로 읽기 | Spreading Activation으로 **관련 지식만 빠르게 탐색** |
-| **범위** | 프로젝트별 분리 | **전역** — 어떤 프로젝트에서든 당신의 전체 지식에 접근 |
-| **분류** | 수동 | 에이전트가 **자동 분류 + 자동 연결** |
-
-CLAUDE.md가 메모라면, Kore-Chamber는 **진짜 뇌**입니다.
-
-## 왜 다른가
-
-| 기존 | Kore-Chamber |
-|------|-------------|
-| AI가 매번 나를 처음 만남 | 볼트를 통해 **당신의 수준, 목표, 지식을 기억** |
-| 대화가 끝나면 배운 게 사라짐 | collect로 **자동 수확, 분류, 연결** |
-| 뭘 모르는지 모름 | explore가 **빈 곳을 보여줌** |
-| 노트 정리는 내가 해야 함 | AI가 **전부 자동으로** |
-
-## 에이전트 시스템
-
-### Collect 파이프라인: `scavenger → sentinel → librarian`
-
-#### Scavenger — 수확기
-
-대화 종료 후 세션 JSONL 로그에서 지식과 사용자 프로필 변화를 추출합니다.
-
-**두 트랙으로 추출:**
-- **Track 1 (지식)**: 개념, 트러블슈팅, 결정, 패턴 → Sentinel을 거쳐 볼트에 저장
-- **Track 2 (프로필)**: 수준 변화, 새 목표, 선호/성향 → MY-PROFILE.md에 자동 반영
-
-**적용 방법론:**
-
-| 방법론 | 분야 | 적용 |
-|--------|------|------|
-| Content Analysis | 질적 연구 | **Manifest**(명시적으로 말한 것) + **Latent**(대화 패턴에서 추론되는 것) 이중 분석 |
-| User Modeling | HCI/UX | **Knowledge**(뭘 아는지) × **Goal**(뭘 원하는지) × **Preference**(어떻게 원하는지) 3축 모델링 |
-| Bloom's Taxonomy | 교육학 | 대화에서 도메인별 이해 수준을 6단계(기억→이해→적용→분석→평가→창조)로 판별 |
-| Schema Theory | 인지 심리학 | 프로필 업데이트 시 **Assimilation**(기존과 일치→추가) / **Accommodation**(충돌→교체) 전략 |
-
-#### Sentinel — 중복 필터
-
-볼트와 배치 내 중복만 빠르게 체크합니다. 속도 우선 — 스캐빈저가 이미 품질 있는 추출을 했으므로.
-
-**루브릭 (2기준):**
-- **Novelty (볼트)** — 기존 노트의 `summary`와 의미적 비교 (frontmatter만 읽음)
-- **Novelty (배치)** — 같은 배치 내 항목 간 중복 체크
-
-**적용 방법론:**
-
-| 방법론 | 분야 | 적용 |
-|--------|------|------|
-| Fuzzy matching | 정보 검색 | 기존 노트 `summary`와 **의미 기반 유사도 비교** — frontmatter만 읽어 속도 확보 |
-
-> JSONL 재파싱, 교차 검증, 보완 과정 없음. 중복 필터에 집중하여 파이프라인 속도 최적화.
-
-#### Librarian — 배치 + 저장 + 연결
-
-Sentinel을 통과한 항목을 메인 볼트에 직접 저장하고, 프로필 업데이트를 적용합니다.
-
-**6단계 처리:**
-1. 타입 분류 (확신도 체크 포함)
-2. 파일명 결정 + 기존 노트와 의미적 중복 감지
-3. 새 노트 생성 또는 기존 노트에 Evergreen 병합
-4. 메인 볼트에 저장
-5. MOC 링크 + 토픽 기반 자동 분할
-6. 교차 타입/교차 도메인 연결 자동 링크
-
-**적용 방법론:**
-
-| 방법론 | 분야 | 적용 |
-|--------|------|------|
-| Faceted Classification | 도서관학 | 타입(1차) + 도메인 + 추상화 수준(2차) **다면 분류**로 오분류 감소 |
-| Evergreen Notes | Andy Matuschak | 같은 파일명 또는 **summary가 겹치는 기존 노트**에 병합 — 중복 파일 대신 기존 노트 성장 |
-| Spreading Activation | 인지 심리학 | 뇌 신경망처럼 **시작점에서 연결을 따라 활성화 확산** — 1차(직접 매칭) → 2차(링크 따라감) → 3차(같은 MOC) |
-| Hebbian Learning | 신경과학 | "함께 발화하는 뉴런은 함께 연결된다" — 같은 대화에서 추출된 항목들을 **자동 상호 연결** |
-| Topic Modeling | NLP | MOC 분할 시 카운트가 아닌 **노트 summary 클러스터링**으로 자연스러운 하위 그룹 발견 |
-
-**프로필 업데이트**: Schema Theory 기반으로 MY-PROFILE.md에 Assimilation/Accommodation 적용
-
-### Explore: `explorer`
-
-#### Explorer — 갭 분석가
-
-뭘 모르는지 보여줍니다. 빠르게 — MOC 파일만 읽고 개별 노트는 스캔하지 않습니다.
-
-**2단계 분석:**
-1. **Quick Scan** — MOC 파일만 읽어 도메인별 커버리지 파악
-2. **Gap Inference** — LLM 도메인 지식 + MY-PROFILE 목표 + MOC 스캔 → 3~5개 구체적 갭 추천
-
-> 의존성 트리, 토폴로지 분석, 노트 샘플링 없음. MOC → 목표 → 갭 → 추천. 속도 우선.
-
-## 설치
+### 3. 설치 확인
 
 ```bash
-npx kore-chamber init
+kore-chamber doctor
 ```
 
-1. 볼트 경로 지정
-2. 5가지 질문 (분야, 수준, 목표, 학습 스타일, 관심 영역)
-3. 기존 Claude 대화 로그를 스캔하여 초기 볼트 자동 구축 (History to Chamber)
-4. Claude Code에 스킬 + 에이전트 + 볼트 탐색 규칙 설치
-5. 전역 CLAUDE.md에 볼트 참조 규칙 삽입 — 모든 세션에서 AI가 당신을 알고 대화
-
-## 업데이트
-
-에이전트와 스킬이 업데이트되면 아래 명령어로 최신화할 수 있습니다. 볼트와 설정은 건드리지 않습니다.
+### 4. 업데이트
 
 ```bash
 npx kore-chamber@latest update
 ```
 
-## 볼트 탐색: Spreading Activation
+`update`는 최신 명령/스킬/에이전트만 갱신하고, 기존 볼트와 설정은 유지합니다.
 
-정적 경로(AI-GUIDE → MOC → 노트)가 아닌, **뇌 신경망의 확산 활성화** 모델로 탐색합니다.
+## 사용방법
 
+### 가장 권장하는 흐름
+
+1. 평소처럼 Claude Code에서 대화합니다.
+2. 저장할 가치가 있는 대화가 끝나면 `/kc-collect`를 실행합니다.
+3. 내부적으로 `kore-chamber collect --session ${CLAUDE_SESSION_ID}`가 실행됩니다.
+4. 저장 결과를 요약해서 확인합니다.
+5. 부족한 영역을 보고 싶으면 `/kc-explore`를 실행합니다.
+
+### 터미널에서 직접 수집
+
+```bash
+kore-chamber collect
 ```
-시작점: "JWT"에 대해 질문
-    ↓
-1차 활성화 (강): summary가 JWT와 직접 관련된 노트
-    → [[httpOnly-Cookie-인증]], [[토큰-갱신-전략]]
-    ↓
-2차 활성화 (중): 1차 노트들의 관련 노트 링크를 따라감
-    → [[XSS-방어]], [[CORS-설정]]
-    ↓
-3차 활성화 (약): 같은 MOC 내 다른 노트
-    → MOC-보안의 나머지 노트들
-    ↓
-역치 이하: 활성화 안 됨
+
+유용한 옵션:
+
+```bash
+kore-chamber collect --dry-run
+kore-chamber collect --session <session-id>
+kore-chamber collect --output json
 ```
 
-| 원리 | 출처 | 적용 |
-|------|------|------|
-| Spreading Activation | Collins & Loftus, 1975 | 연결을 따라 활성화가 확산, 거리에 따라 감쇠 |
-| Hebbian Learning | Hebb, 1949 | 같은 대화에서 추출된 항목들은 자동으로 상호 연결 |
+- `--dry-run`: 실제 파일 변경 없이 저장 계획만 확인
+- `--session`: 특정 세션 transcript 지정
+- `--output json`: Claude Code 스킬이나 다른 자동화에서 읽기 쉬운 JSON 출력
 
-## Obsidian 추천
+### 상태 점검
 
-Kore-Chamber는 Markdown 파일 기반이라 옵시디언 없이도 동작합니다. 메모장으로 열어도 됩니다.
+```bash
+kore-chamber doctor
+kore-chamber status
+```
 
-**그런데 옵시디언을 꼭 쓰세요.** Spreading Activation으로 만들어진 연결들이 그래프 뷰에서 빛납니다. 당신의 뇌가 자라나는 걸 눈으로 볼 수 있습니다. 노트가 100개를 넘어가면 그래프 뷰를 켜놓고 멍하니 보게 됩니다. 그게 당신의 뇌입니다.
+- `doctor`: 설치 상태, 파일 누락, Claude CLI 존재 여부, 볼트 구조를 검사
+- `status`: 노트 수, MOC 수, orphan note, broken link, 최근 수집 날짜를 표시
 
-## 기술 스택
+### 수집은 자동이 아닙니다
 
-- **에이전트 런타임**: Claude Code (Skills + Agent Teams)
-- **지식 저장소**: Markdown (Obsidian 강력 추천)
-- **init CLI**: TypeScript (npm)
-- **탐색 알고리즘**: Spreading Activation (별도 인프라 없이 위키링크 + tag + MOC 기반)
+Kore Chamber는 세션 종료 시 무조건 자동 수집하지 않습니다.  
+이건 의도된 설계입니다. 저장 시점을 사용자가 제어해야 중복 수집과 원치 않는 프로필 반영을 줄일 수 있기 때문입니다.
+
+## 기능 상세 설명
+
+### 아키텍처
+
+```text
+src/
+├── cli/
+│   ├── index.ts
+│   ├── init.ts
+│   ├── update.ts
+│   ├── collect.ts
+│   ├── doctor.ts
+│   └── status.ts
+├── core/
+│   ├── config.ts
+│   ├── jsonl.ts
+│   ├── vault.ts
+│   ├── dedup.ts
+│   ├── slug.ts
+│   ├── moc.ts
+│   └── linker.ts
+├── llm/
+│   ├── claude.ts
+│   └── extract.ts
+└── templates/
+    └── AI-GUIDE.md
+```
+
+### `collect` 파이프라인
+
+`kore-chamber collect`는 아래 순서로 동작합니다.
+
+1. `config.yaml`에서 `vault_path`를 읽습니다.
+2. 세션 ID가 있으면 해당 transcript를, 없으면 가장 최근 JSONL을 찾습니다.
+3. JSONL에서 사용자/어시스턴트 텍스트만 추출하고, tool output과 시스템 잡음을 제거합니다.
+4. 사용자 턴이 3개 미만이면 가치가 낮다고 보고 early exit 합니다.
+5. 기존 볼트의 `summary`, `tags`, `type`, `links`, `MY-PROFILE.md`를 읽습니다.
+6. 정제된 대화 텍스트를 AI에 보내 구조화된 JSON으로 추출합니다.
+   - `knowledge_items[]`
+   - `profile_updates[]`
+7. 배치 내부 중복을 먼저 제거합니다.
+8. 각 항목에 대해 볼트 기준 중복 검사를 수행합니다.
+   - 명백한 중복은 코드가 바로 스킵
+   - 애매한 구간은 AI가 `new | merge | skip`를 판정
+9. 새 노트는 slug를 생성하고 카테고리 폴더에 저장합니다.
+10. 병합 대상이 있으면 기존 노트와 Evergreen 방식으로 합칩니다.
+11. 태그 기준으로 가장 적합한 MOC를 찾아 `[[slug]]`를 추가합니다.
+12. 관련 노트를 탐색해 양방향 위키링크를 추가합니다.
+13. 같은 배치에서 함께 나온 노트끼리도 상호 링크합니다.
+14. 프로필 업데이트는 신뢰도에 따라 처리합니다.
+   - `high`: 자동 반영
+   - `medium`: 보류 후 사용자 확인
+   - `low`: 무시
+15. 마지막에 사람이 읽기 쉬운 요약 또는 JSON 결과를 출력합니다.
+
+### 코드와 AI의 책임 분리
+
+| 영역 | 담당 | 이유 |
+|---|---|---|
+| JSONL 탐색/파싱 | 코드 | 결정적 작업 |
+| 노이즈 제거 | 코드 | 규칙 기반 처리 가능 |
+| frontmatter 읽기/쓰기 | 코드 | 파일 일관성 필요 |
+| 중복 1차 검사 | 코드 | 빠르고 재현 가능해야 함 |
+| 경계선 중복 판정 | AI | 의미 해석 필요 |
+| 노트 병합 문안 | AI 보조 + 코드 저장 | 자연스러운 합성 필요 |
+| slug 생성 | 코드 | 규칙 일관성 필요 |
+| MOC 추가/링크 반영 | 코드 | 부작용 있는 작업 |
+| 지식 후보 추출 | AI | 의미 해석 필요 |
+| 프로필 변화 감지 | AI | 문맥 이해 필요 |
+
+### 볼트 구조
+
+```text
+vault/
+├── AI-GUIDE.md
+├── MY-PROFILE.md
+├── 00-Inbox/
+├── 10-Concepts/
+├── 20-Troubleshooting/
+├── 30-Decisions/
+├── 40-Patterns/
+├── 50-MOC/
+└── Templates/
+```
+
+- `10-Concepts`: 개념 설명
+- `20-Troubleshooting`: 문제, 원인, 해결
+- `30-Decisions`: 대안 비교와 선택 이유
+- `40-Patterns`: 재사용 가능한 구현 패턴
+- `50-MOC`: 도메인별 인덱스
+
+### MOC와 링크 전략
+
+- MOC는 노트 타입이 아니라 **주제/도메인 기준**으로 관리합니다.
+- 관련 링크는 3단계 탐색으로 찾습니다.
+  - 1차: tags 2개 이상 겹침 또는 summary 키워드 매칭
+  - 2차: 1차 노트의 `## 관련 노트`
+  - 3차: 같은 MOC에 속한 노트
+- 같은 collect 배치에서 나온 항목은 함께 링크합니다.
+
+### `doctor`
+
+`doctor`는 아래를 검사합니다.
+
+- `~/.kore-chamber/config.yaml`
+- `~/.kore-chamber/init-answers.yaml`
+- `vault_path` 접근 가능 여부
+- 볼트 폴더 구조
+- `AI-GUIDE.md`, `MY-PROFILE.md`
+- Claude Code 명령/에이전트 설치 상태
+- `claude` CLI 존재 여부
+
+### `status`
+
+`status`는 아래를 보여줍니다.
+
+- 폴더별 노트 수
+- 총 노트 수
+- MOC 수
+- MOC에 연결되지 않은 orphan note 수
+- 존재하지 않는 위키링크 수
+- 최근 수집 날짜
+
+### 설계 원칙
+
+- **결정적인 작업은 코드로**
+- **애매한 작업만 AI로**
+- **저장은 명시적으로**
+- **Markdown을 소스 오브 트루스로 유지**
+- **CLI 출력은 사람용 markdown과 기계용 JSON 둘 다 지원**
 
 ## License
 

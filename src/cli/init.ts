@@ -1,7 +1,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline";
+import { execSync } from "node:child_process";
 import { stringify as yamlStringify } from "yaml";
+import { checkAuthStatus, doLogin } from "../llm/claude.js";
 
 const KORE_DIR = path.join(process.env.HOME!, ".kore-chamber");
 const CLAUDE_DIR = path.join(process.env.HOME!, ".claude");
@@ -141,20 +143,38 @@ function createVaultStructure(vaultPath: string): void {
 function installClaudeFiles(): void {
   const commandsDir = path.join(CLAUDE_DIR, "commands");
   const agentsDir = path.join(CLAUDE_DIR, "agents");
+  const skillsDir = path.join(CLAUDE_DIR, "skills");
   fs.mkdirSync(commandsDir, { recursive: true });
   fs.mkdirSync(agentsDir, { recursive: true });
+  fs.mkdirSync(skillsDir, { recursive: true });
 
-  // Skills
-  const skillsSource = path.join(import.meta.dirname, "../../.claude/commands");
+  // Commands (kc-init, kc-explore — NOT kc-collect which is now a skill)
+  const commandsSource = path.join(import.meta.dirname, "../../.claude/commands");
+  if (fs.existsSync(commandsSource)) {
+    for (const file of fs.readdirSync(commandsSource)) {
+      if (!file.endsWith(".md")) continue;
+      if (file === "kc-collect.md") continue; // migrated to skill
+      fs.copyFileSync(
+        path.join(commandsSource, file),
+        path.join(commandsDir, file)
+      );
+      console.log(`  ⚡ ~/.claude/commands/${file}`);
+    }
+  }
+
+  // Skills (directory-based)
+  const skillsSource = path.join(import.meta.dirname, "../../.claude/skills");
   if (fs.existsSync(skillsSource)) {
-    for (const file of fs.readdirSync(skillsSource)) {
-      if (file.endsWith(".md")) {
-        fs.copyFileSync(
-          path.join(skillsSource, file),
-          path.join(commandsDir, file)
-        );
-        console.log(`  ⚡ ~/.claude/commands/${file}`);
+    for (const entry of fs.readdirSync(skillsSource, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const srcDir = path.join(skillsSource, entry.name);
+      const destDir = path.join(skillsDir, entry.name);
+      fs.mkdirSync(destDir, { recursive: true });
+
+      for (const file of fs.readdirSync(srcDir)) {
+        fs.copyFileSync(path.join(srcDir, file), path.join(destDir, file));
       }
+      console.log(`  ⚡ ~/.claude/skills/${entry.name}/`);
     }
   }
 
@@ -302,6 +322,37 @@ export async function runInit() {
     const answers = await collectAnswers(rl, vaultPath);
 
     console.log("\n━━━ 설치 중 ━━━\n");
+
+    // Claude CLI 존재 확인
+    console.log("🔍 Claude Code CLI 확인:");
+    try {
+      const claudePath = execSync("which claude", { encoding: "utf-8" }).trim();
+      console.log(`  ✅ ${claudePath}\n`);
+    } catch {
+      console.error("  ❌ Claude Code CLI가 설치되지 않았습니다.");
+      console.error("     https://docs.anthropic.com/en/docs/claude-code 에서 설치하세요.\n");
+      process.exit(1);
+    }
+
+    // Claude OAuth 인증 확인
+    console.log("🔑 Claude 인증 확인:");
+    const authStatus = checkAuthStatus();
+    if (authStatus.loggedIn) {
+      console.log(`  ✅ 로그인됨 (${authStatus.email ?? authStatus.authMethod ?? ""})\n`);
+    } else {
+      const loginOk = doLogin();
+      if (!loginOk) {
+        console.error("  ❌ Claude 로그인에 실패했습니다.");
+        console.error("     터미널에서 `claude login`을 직접 실행해보세요.\n");
+        process.exit(1);
+      }
+      const after = checkAuthStatus();
+      if (!after.loggedIn) {
+        console.error("  ❌ 로그인 후에도 인증이 확인되지 않습니다.\n");
+        process.exit(1);
+      }
+      console.log(`  ✅ 로그인 완료 (${after.email ?? ""})\n`);
+    }
 
     console.log("📂 볼트 구조 생성:");
     createVaultStructure(vaultPath);

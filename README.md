@@ -2,7 +2,7 @@
 
 > Inspired by [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)
 
-**All this project does is install a set of agents and skills into your Claude Code. That's it.**
+**A hybrid knowledge-vault engine for Claude Code**
 
 ### Give your AI your brain.
 
@@ -10,199 +10,273 @@
 
 > *"I know that I know nothing."* — Socrates
 
-Your AI meets you for the first time, every time. It doesn't know what you learned yesterday, what level you're at, or where you're headed. Kore-Chamber breaks this limit.
+## Introduction
 
-## Get Started
+Kore Chamber stores Claude Code conversations into a Markdown knowledge vault.  
+The key shift in Phase 1 is that it is no longer an AI-only prompt pipeline. It is now a **hybrid system where deterministic work is handled by a TypeScript core engine and AI is reserved for semantic judgment**.
+
+### What changed
+
+- **Code handles**: JSONL parsing, noise filtering, frontmatter IO, duplicate checks, file creation, MOC updates, related links, profile writes
+- **AI handles**: knowledge extraction, category assistance, borderline dedup judgment, merge drafting, profile-change detection
+- **Collection is explicit**: no automatic session-end harvesting by default
+
+### Problems it solves
+
+- You talk to AI a lot, but useful knowledge disappears after the session
+- You pay context cost repeatedly because prior learning is hard to recover
+- It is hard to see what you already know, what changed, and what is missing
+- Raw notes are easy to create but hard to structure, connect, and reuse
+
+### High-level flow
+
+```text
+[Claude Code conversation]
+          ↓
+[/kc-collect or kore-chamber collect]
+          ↓
+[TS Core] parse · dedup · write · link
+          ↓
+[AI] extract · classify assist · detect profile changes
+          ↓
+[Markdown Vault]
+  - 10-Concepts
+  - 20-Troubleshooting
+  - 30-Decisions
+  - 40-Patterns
+  - 50-MOC
+```
+
+### One-line summary
+
+If `CLAUDE.md` is a sticky note, Kore Chamber is a **structured personal knowledge graph**.
+
+## Installation
+
+### Requirements
+
+- Node.js 18+
+- Claude Code CLI
+
+### 1. Initial setup
 
 ```bash
 npx kore-chamber init
 ```
 
-Or just tell your AI: **"Install kore-chamber for me"** and paste this link:
-```
-https://raw.githubusercontent.com/dldush/kore-chamber/main/docs/guide/installation.md
-```
+`init` does the following:
 
-## Why Use It
+1. Checks that Claude Code CLI is installed
+2. Verifies Claude OAuth login (opens browser if not logged in)
+3. Creates the vault path and base folder structure
+4. Asks about your field, level, goals, learning style, and deep interests
+5. Collects existing Claude transcript paths and stores them in `config.yaml`
+6. Installs Claude Code commands, skills, and agents
+   - `~/.claude/commands/kc-init.md`
+   - `~/.claude/commands/kc-explore.md`
+   - `~/.claude/skills/kc-collect/`
+   - `~/.claude/agents/*.md`
+7. Adds your vault path to Claude Code settings
+8. Inserts global vault reference rules into `~/.claude/CLAUDE.md`
 
-- **Your AI remembers you.** Across sessions, your AI knows your level, goals, and preferences. No more "I'm a frontend developer and..." every conversation.
-- **Knowledge accumulates automatically.** Just talk to AI. Collect handles classification, connection, and storage. You just learn.
-- **You can see what you don't know.** Explore shows gaps in your knowledge relative to your goals. "What should I study next?" disappears.
-- **It compounds over time.** As your vault grows, AI personalization deepens, connections multiply, and gap analysis sharpens. N notes = N×(N-1)/2 possible connections — compound growth.
+### 2. Generate the initial profile
 
-## Who Is This For
+After installation, run this once inside Claude Code:
 
-- You talk to AI a lot, but **learned things vanish**
-- You learn BFS-style (broad and shallow) and **lose track of where you are**
-- You're tired of AI **not knowing anything about you**
-- You've had the **"I don't know what I don't know"** moment
-
-## How It Works
-
-**Use AI as you normally do.** Just `collect` when you're done.
-
-```
-[Normal] Free conversation with AI — learning, coding, debugging, anything
-                              ↓
-[When done] /kc-collect → Knowledge auto-saved to your vault
-                              ↓
-                    As vault grows, AI understands you deeper
-                              ↓
-[When stuck] /kc-explore → "Here's what you don't know" (WIP — being refined)
+```text
+/kc-init
 ```
 
-- **collect**: Auto-extracts concepts, troubleshooting, decisions, patterns + profile updates → verifies → classifies → stores → connects
-- **explore** (WIP): Shows gaps between your goals and your vault. Turns unknown unknowns into known unknowns
+This creates `MY-PROFILE.md` and your initial MOCs.
 
-## Beyond CLAUDE.md
+### 3. Verify the installation
 
-Claude Code's `CLAUDE.md` and `MEMORY.md` are a great start, but they have limits.
+```bash
+kore-chamber doctor
+```
 
-| | CLAUDE.md / MEMORY.md | Kore-Chamber |
-|---|---|---|
-| **Storage** | MEMORY.md 200-line limit; CLAUDE.md fully loaded but keep it short | Physical Markdown files, **no size limit** |
-| **Structure** | Flat text | MOCs + wiki-links + frontmatter = **structured knowledge graph** |
-| **Search** | Read entire file | Spreading Activation = **retrieve only relevant knowledge** |
-| **Scope** | Per-project | **Global** — access your full knowledge from any project |
-| **Organization** | Manual | Agents **auto-classify + auto-connect** |
-
-If CLAUDE.md is a sticky note, Kore-Chamber is **an actual brain**.
-
-## What Makes It Different
-
-| Before | With Kore-Chamber |
-|--------|-------------------|
-| AI meets you fresh every time | Vault gives AI **your level, goals, and knowledge** |
-| Learned things vanish after the session | Collect **auto-harvests, classifies, connects** |
-| Don't know what you don't know | Explore **shows the gaps** |
-| Note organization is your job | AI handles **everything automatically** |
-
-## Agent System
-
-### Collect Pipeline: `scavenger → sentinel → librarian`
-
-#### Scavenger — Harvester
-
-Reads the session JSONL log after conversation ends. Extracts knowledge and profile changes.
-
-**Two extraction tracks:**
-- **Track 1 (Knowledge)**: Concepts, troubleshooting, decisions, patterns → through Sentinel to vault
-- **Track 2 (Profile)**: Level changes, new goals, preferences → auto-update MY-PROFILE.md
-
-**Methodologies:**
-
-| Method | Field | Application |
-|--------|-------|-------------|
-| Content Analysis | Qualitative Research | **Manifest** (explicitly stated) + **Latent** (inferred from conversation patterns) |
-| User Modeling | HCI/UX | **Knowledge** × **Goal** × **Preference** — 3-axis user modeling |
-| Bloom's Taxonomy | Education | 6-level comprehension assessment (Remember → Understand → Apply → Analyze → Evaluate → Create) |
-| Schema Theory | Cognitive Psychology | Profile updates via **Assimilation** (fits existing → append) / **Accommodation** (conflicts → replace) |
-
-#### Sentinel — Dedup Filter
-
-Fast duplicate check only. No JSONL re-parsing, no supplementation. Speed over thoroughness.
-
-**Rubric (2 criteria):**
-- **Novelty (vault)** — Semantic comparison with existing note summaries (frontmatter only)
-- **Novelty (batch)** — Dedup within the current extraction batch
-
-**Methodologies:**
-
-| Method | Field | Application |
-|--------|-------|-------------|
-| Fuzzy Matching | Information Retrieval | **Semantic similarity** with existing note `summary` fields — frontmatter only for speed |
-
-> JSONL cross-validation, accuracy checks, and supplementation removed. Dedup-focused for pipeline speed.
-
-#### Librarian — Placement + Storage + Connection
-
-Stores Sentinel-approved items directly in the main vault and applies profile updates.
-
-**7-step process:**
-1. Type classification (with confidence check)
-2. Filename + semantic duplicate detection
-3. New note or Evergreen merge into existing
-4. Save to main vault
-5. MOC link + topic-based auto-split
-6. Cross-type / cross-domain connection via Spreading Activation
-7. Hebbian co-occurrence linking for batch items
-
-**Methodologies:**
-
-| Method | Field | Application |
-|--------|-------|-------------|
-| Faceted Classification | Library Science | Type (primary) + domain + abstraction level (secondary) — **multi-facet classification** |
-| Evergreen Notes | Andy Matuschak | Merge into **existing notes with overlapping summaries** — grow notes, don't duplicate |
-| Spreading Activation | Cognitive Psychology | Brain-like **activation spread** through connections — 1st (direct) → 2nd (linked) → 3rd (same MOC) |
-| Hebbian Learning | Neuroscience | "Neurons that fire together wire together" — items from the **same conversation auto-link** |
-| Topic Modeling | NLP | MOC split via **summary clustering**, not just link count |
-
-**Profile updates**: Schema Theory-based Assimilation/Accommodation on MY-PROFILE.md
-
-### Explore: `explorer`
-
-#### Explorer — Gap Analyst
-
-Shows what you don't know. Fast — reads MOC files only, no individual note scanning.
-
-**2-step analysis:**
-1. **Quick Scan** — Read MOC files only → domain coverage at a glance
-2. **Gap Inference** — LLM domain knowledge + MY-PROFILE goals + MOC scan → 3-5 specific gaps
-
-> No dependency trees, no topology analysis, no note sampling. MOCs → goals → gaps → recommendations. Speed over exhaustiveness.
-
-## What Happens During Init
-
-1. Set vault path
-2. Answer 5 questions (field, level, goals, learning style, deep interests)
-3. Scan existing Claude conversation logs to auto-build initial vault (History to Chamber)
-4. Install skills + agents + vault navigation rules into Claude Code
-5. Insert vault reference rules into global CLAUDE.md — AI knows you in every session
-
-## Update
-
-When agents and skills are updated, pull the latest with one command. Your vault and config are untouched.
+### 4. Update
 
 ```bash
 npx kore-chamber@latest update
 ```
 
-## Vault Navigation: Spreading Activation
+`update` refreshes commands, skills, and agents without touching your vault or config.
 
-Instead of static paths (AI-GUIDE → MOC → note), navigation follows the **brain's spreading activation** model.
+## Usage
 
+### Recommended flow
+
+1. Talk in Claude Code as usual
+2. When the conversation is worth keeping, run `/kc-collect`
+3. Internally, it runs `kore-chamber collect --session ${CLAUDE_SESSION_ID}`
+4. Review the summary of what was stored
+5. Use `/kc-explore` when you want to inspect gaps
+
+### Collect directly from the terminal
+
+```bash
+kore-chamber collect
 ```
-Start: User asks about "JWT"
-    ↓
-1st activation (strong): Notes with summaries directly related to JWT
-    → [[httpOnly-Cookie-Auth]], [[Token-Refresh-Strategy]]
-    ↓
-2nd activation (medium): Follow linked notes' ## Related Notes
-    → [[XSS-Defense]], [[CORS-Config]]
-    ↓
-3rd activation (weak): Other notes in the same MOC
-    → Remaining notes in MOC-Security
-    ↓
-Below threshold: Not activated
+
+Useful options:
+
+```bash
+kore-chamber collect --dry-run
+kore-chamber collect --session <session-id>
+kore-chamber collect --output json
 ```
 
-| Principle | Source | Application |
-|-----------|--------|-------------|
-| Spreading Activation | Collins & Loftus, 1975 | Activation spreads through connections, decaying with distance |
-| Hebbian Learning | Hebb, 1949 | Items extracted from the same conversation auto-link to each other |
+- `--dry-run`: show the full storage plan without writing files
+- `--session`: target a specific transcript
+- `--output json`: machine-readable output for skills and automation
 
-## Obsidian Recommended
+### Inspect health and vault state
 
-Kore-Chamber runs on plain Markdown files. You could open them in Notepad.
+```bash
+kore-chamber doctor
+kore-chamber status
+```
 
-**But seriously, use Obsidian.** The connections built by Spreading Activation come alive in the graph view. You can watch your brain grow. Once you hit 100 notes, you'll just stare at the graph view. That's your brain.
+- `doctor`: checks installation, missing files, Claude CLI, and vault structure
+- `status`: shows note counts, MOC counts, orphan notes, broken links, and latest collection date
 
-## Tech Stack
+### Collection is intentionally manual
 
-- **Agent Runtime**: Claude Code (Skills + Agent Teams)
-- **Knowledge Store**: Markdown (Obsidian strongly recommended)
-- **Init CLI**: TypeScript (npm)
-- **Navigation**: Spreading Activation (no extra infra — wiki-links + tags + MOCs)
+Kore Chamber does not collect automatically when a session ends.  
+This is deliberate. The user should control when knowledge is persisted to avoid noisy or unwanted saves.
+
+## Detailed Features
+
+### Architecture
+
+```text
+src/
+├── cli/
+│   ├── index.ts
+│   ├── init.ts
+│   ├── update.ts
+│   ├── collect.ts
+│   ├── doctor.ts
+│   └── status.ts
+├── core/
+│   ├── config.ts
+│   ├── jsonl.ts
+│   ├── vault.ts
+│   ├── dedup.ts
+│   ├── slug.ts
+│   ├── moc.ts
+│   └── linker.ts
+├── llm/
+│   ├── claude.ts
+│   └── extract.ts
+└── templates/
+    └── AI-GUIDE.md
+```
+
+### `collect` pipeline
+
+`kore-chamber collect` runs in this order:
+
+1. Load `vault_path` from `config.yaml`
+2. Resolve the transcript by session ID, or fall back to the latest JSONL
+3. Parse JSONL and keep only user/assistant text
+4. Remove tool output and system noise
+5. Exit early if the conversation has fewer than 3 user turns
+6. Read existing note summaries, tags, links, and `MY-PROFILE.md`
+7. Ask the LLM for structured extraction
+   - `knowledge_items[]`
+   - `profile_updates[]`
+8. Remove duplicates inside the extracted batch
+9. Check each item against the vault
+   - obvious duplicates are skipped by code
+   - borderline cases are judged by AI as `new | merge | skip`
+10. Generate a slug and store the note in the right folder
+11. Merge into an existing note when needed
+12. Add the note to the best-fit MOC
+13. Add bidirectional related links
+14. Add cross-links within the same collection batch
+15. Apply profile updates by confidence
+   - `high`: apply automatically
+   - `medium`: keep pending for user confirmation
+   - `low`: ignore
+16. Print a human-readable summary or structured JSON
+
+### Responsibility split between code and AI
+
+| Area | Owner | Why |
+|---|---|---|
+| JSONL discovery/parsing | Code | deterministic work |
+| Noise filtering | Code | rule-based |
+| Frontmatter read/write | Code | consistency matters |
+| First-pass dedup | Code | should be fast and reproducible |
+| Borderline dedup judgment | AI | semantic interpretation needed |
+| Merge drafting | AI-assisted, code-applied | natural synthesis needed |
+| Slug generation | Code | consistent naming rules |
+| MOC/link writes | Code | side-effectful operations |
+| Knowledge extraction | AI | meaning-based |
+| Profile-change detection | AI | context-sensitive |
+
+### Vault structure
+
+```text
+vault/
+├── AI-GUIDE.md
+├── MY-PROFILE.md
+├── 00-Inbox/
+├── 10-Concepts/
+├── 20-Troubleshooting/
+├── 30-Decisions/
+├── 40-Patterns/
+├── 50-MOC/
+└── Templates/
+```
+
+- `10-Concepts`: conceptual notes
+- `20-Troubleshooting`: problem, cause, fix
+- `30-Decisions`: trade-offs and decisions
+- `40-Patterns`: reusable implementation patterns
+- `50-MOC`: domain indexes
+
+### MOC and linking strategy
+
+- MOCs are topic/domain indexes, not note-type buckets
+- Related links are found in 3 passes
+  - 1st: 2+ overlapping tags or summary keyword match
+  - 2nd: follow `## Related Notes` from 1st-degree notes
+  - 3rd: notes in the same MOC
+- Notes extracted from the same collection batch are linked together
+
+### `doctor`
+
+`doctor` checks:
+
+- `~/.kore-chamber/config.yaml`
+- `~/.kore-chamber/init-answers.yaml`
+- vault path accessibility
+- required vault folders
+- `AI-GUIDE.md` and `MY-PROFILE.md`
+- Claude Code commands and agents
+- `claude` CLI availability
+
+### `status`
+
+`status` reports:
+
+- note counts by folder
+- total note count
+- MOC count
+- orphan notes not linked from any MOC
+- broken wiki-links
+- latest collection date
+
+### Design principles
+
+- **deterministic tasks belong to code**
+- **ambiguous tasks belong to AI**
+- **collection should be explicit**
+- **Markdown remains the source of truth**
+- **CLI should support both markdown and JSON output**
 
 ## License
 
