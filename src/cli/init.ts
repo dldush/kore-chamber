@@ -39,7 +39,7 @@ async function getVaultPath(rl: readline.Interface): Promise<string> {
 
   const vaultPath = await ask(
     rl,
-    "[1/7] 볼트 경로를 입력하세요 (옵시디언 볼트 폴더)\n      > "
+    "볼트 경로를 입력하세요 (옵시디언 볼트 폴더)\n> "
   );
 
   if (!vaultPath) {
@@ -74,30 +74,30 @@ async function collectAnswers(
 ): Promise<InitAnswers> {
   const field = await ask(
     rl,
-    "\n[2/7] 공부하고 있는 분야\n      (예: 프론트엔드, 백엔드, AI/ML, 디자인, 의학, 법률...)\n      > "
+    "\n[1/5] 공부하고 있는 분야\n      (예: 프론트엔드, 백엔드, AI/ML, 디자인, 의학, 법률...)\n      > "
   );
 
   const level = await ask(
     rl,
-    "\n[3/7] 현재 수준\n      (예: 입문 3개월차, 주니어 1년차, 비전공 독학 중...)\n      > "
+    "\n[2/5] 현재 수준\n      (예: 입문 3개월차, 주니어 1년차, 비전공 독학 중...)\n      > "
   );
 
   const goal = await ask(
     rl,
-    "\n[4/7] 목표\n      (예: 1년 내 테크기업 이직, 풀스택 개발자, 논문 작성...)\n      > "
+    "\n[3/5] 목표\n      (예: 1년 내 테크기업 이직, 풀스택 개발자, 논문 작성...)\n      > "
   );
 
   const learningStyle = await ask(
     rl,
-    "\n[5/7] 학습 스타일\n      (예: 개념부터 잡기, 만들면서 배우기, 둘 다...)\n      > "
+    "\n[4/5] 학습 스타일\n      (예: 개념부터 잡기, 만들면서 배우기, 둘 다...)\n      > "
   );
 
   const deepInterest = await ask(
     rl,
-    "\n[6/7] 특별히 깊이 파고 싶은 영역\n      (예: React 성능 최적화, 시스템 디자인, DB 설계...)\n      > "
+    "\n[5/5] 특별히 깊이 파고 싶은 영역\n      (예: React 성능 최적화, 시스템 디자인, DB 설계...)\n      > "
   );
 
-  console.log("\n[7/7] 기존 Claude 대화를 스캔하여 초기 볼트를 구축할 수 있습니다.");
+  console.log("\n기존 Claude 대화를 스캔하여 초기 볼트를 구축할 수 있습니다.");
   console.log("      1. 전체 스캔 — 모든 대화 로그에서 지식 추출 (시간이 걸릴 수 있음)");
   console.log("      2. 최근 N일만 — 최근 대화만 처리");
   console.log("      3. 건너뛰기 — 빈 볼트에서 시작");
