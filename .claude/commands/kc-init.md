@@ -71,9 +71,10 @@ Update `AI-GUIDE.md`'s MOC Index table with the created MOCs.
 
 If historyOption is 1 or 2:
 
-1. Read the JSONL paths that `npx kore-chamber init` collected
-2. For each JSONL file, run the collect pipeline (scavenger → sentinel → librarian)
-3. This may take a while for large histories — show progress
+1. Read `history_paths` from `~/.kore-chamber/config.yaml` (saved by `npx kore-chamber init`)
+2. If `history_paths` is empty or missing, scan `~/.claude/projects/` for JSONL files as fallback
+3. For each JSONL file, run the collect pipeline (scavenger → sentinel → librarian)
+4. This may take a while for large histories — show progress
 
 If historyOption is 3: Skip.
 

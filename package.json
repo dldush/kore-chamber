@@ -12,6 +12,11 @@
   "bin": {
     "kore-chamber": "./dist/cli/init.js"
   },
+  "files": [
+    "dist/",
+    ".claude/",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc && cp -r src/templates dist/templates",
     "dev": "tsx src/cli/init.ts"

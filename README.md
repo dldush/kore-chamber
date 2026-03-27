@@ -60,7 +60,7 @@ Claude Code's `CLAUDE.md` and `MEMORY.md` are a great start, but they have limit
 
 | | CLAUDE.md / MEMORY.md | Kore-Chamber |
 |---|---|---|
-| **Storage** | Memory files, 200-line limit | Physical Markdown files, **no size limit** |
+| **Storage** | MEMORY.md 200-line limit; CLAUDE.md fully loaded but keep it short | Physical Markdown files, **no size limit** |
 | **Structure** | Flat text | MOCs + wiki-links + frontmatter = **structured knowledge graph** |
 | **Search** | Read entire file | Spreading Activation = **retrieve only relevant knowledge** |
 | **Scope** | Per-project | **Global** — access your full knowledge from any project |

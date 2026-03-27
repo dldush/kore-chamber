@@ -32,19 +32,17 @@ The scavenger will return:
 
 ### 3. Run Sentinel
 
-Launch the `sentinel` agent with:
-- The knowledge items from scavenger
-- The JSONL path (for cross-validation)
+Launch the `sentinel` agent with the knowledge items from scavenger (dedup only — no JSONL):
 
 ```
-Verify these knowledge items. JSONL path for cross-validation: [jsonl_path]
+Check these knowledge items for duplicates against the vault and within the batch.
 
 [paste scavenger's knowledge items output]
 ```
 
 The sentinel will return:
-- Passed items (as-is or supplemented)
-- Rejected items with reasons
+- Passed items
+- Rejected items with reasons (duplicates)
 
 ### 4. Run Librarian
 
@@ -78,7 +76,7 @@ After the pipeline completes, show a combined summary to the user:
 📝 추출: [N]개 항목
 ✅ 저장: [N]개
   [list each stored note with folder and filename]
-🔄 보완: [N]개 (센티넬이 원본에서 맥락 보충)
+🔄 중복: [N]개 (센티넬이 중복 필터링)
 ❌ 탈락: [N]개
   [list each rejected item with reason]
 🔗 연결: [N]개 자동 링크

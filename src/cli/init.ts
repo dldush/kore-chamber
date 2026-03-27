@@ -130,10 +130,9 @@ function createVaultStructure(vaultPath: string): void {
   // AI-GUIDE.md
   const aiGuidePath = path.join(vaultPath, "AI-GUIDE.md");
   if (!fs.existsSync(aiGuidePath)) {
-    const aiGuideTemplate = fs.readFileSync(
-      path.join(import.meta.dirname, "../templates/AI-GUIDE.md"),
-      "utf-8"
-    );
+    const aiGuideTemplate = fs
+      .readFileSync(path.join(import.meta.dirname, "../templates/AI-GUIDE.md"), "utf-8")
+      .replace("{{DATE}}", new Date().toISOString().split("T")[0]);
     fs.writeFileSync(aiGuidePath, aiGuideTemplate);
     console.log("  📄 AI-GUIDE.md");
   }
@@ -178,11 +177,14 @@ function installClaudeFiles(): void {
 
 // ─── Step 6-7: Save Config ───
 
-function saveConfig(answers: InitAnswers): void {
+function saveConfig(answers: InitAnswers, jsonlPaths: string[]): void {
   fs.mkdirSync(KORE_DIR, { recursive: true });
 
   // config.yaml
-  const config = { vault_path: answers.vaultPath };
+  const config: Record<string, unknown> = { vault_path: answers.vaultPath };
+  if (jsonlPaths.length > 0) {
+    config.history_paths = jsonlPaths;
+  }
   fs.writeFileSync(
     path.join(KORE_DIR, "config.yaml"),
     yamlStringify(config)
@@ -309,19 +311,19 @@ async function main() {
     console.log("\n⚡ Claude Code 스킬/에이전트 설치:");
     installClaudeFiles();
 
+    const jsonlPaths = collectJsonlPaths(answers.historyOption);
+
     console.log("\n💾 설정 저장:");
-    saveConfig(answers);
+    saveConfig(answers, jsonlPaths);
 
     console.log("\n🔧 Claude Code 연동:");
     setupClaudeAccess(vaultPath);
     insertVaultRules(vaultPath);
 
-    const jsonlPaths = collectJsonlPaths(answers.historyOption);
-
     console.log("\n━━━ 설치 완료 ━━━\n");
 
     if (jsonlPaths.length > 0) {
-      console.log(`📜 JSONL 로그 ${jsonlPaths.length}개 발견.`);
+      console.log(`📜 JSONL 로그 ${jsonlPaths.length}개 발견 → config.yaml에 저장됨.`);
       console.log(
         "   Claude Code에서 /kc-init을 실행하면 초기 볼트를 구축합니다.\n"
       );
