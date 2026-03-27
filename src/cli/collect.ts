@@ -14,6 +14,7 @@ import { checkDuplicate, batchDedup } from "../core/dedup.js";
 import { generateSlug } from "../core/slug.js";
 import { findBestMOC, addToMOC } from "../core/moc.js";
 import { searchRelated, addLinks, addBatchLinks } from "../core/linker.js";
+import { ensureAuth } from "../llm/claude.js";
 import {
   extractKnowledge,
   judgeBorderline,
@@ -191,7 +192,9 @@ async function collect(
   const profile = readProfile(vaultPath);
   const conversation = formatConversation(turns);
 
-  // 3. LLM extraction
+  // 3. Auth check + LLM extraction
+  log("🔐 Claude 인증 확인...");
+  ensureAuth();
   log("🤖 지식 추출 중...");
   const extraction = await extractKnowledge(
     conversation,

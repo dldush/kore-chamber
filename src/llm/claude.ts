@@ -1,5 +1,25 @@
 import * as fs from "node:fs";
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
+
+/**
+ * Check if Claude CLI is authenticated.
+ * Runs with inherited stdio so login prompt is visible to the user.
+ * Call this once before the first LLM query.
+ */
+export function ensureAuth(): void {
+  const result = spawnSync("claude", ["-p", "reply with ok", "--max-turns", "1"], {
+    stdio: "inherit",
+    timeout: 60_000,
+    encoding: "utf-8",
+  });
+
+  if (result.status !== 0) {
+    throw new Error(
+      "Claude CLI 인증에 실패했습니다.\n" +
+      "터미널에서 `claude`를 실행하여 로그인하세요."
+    );
+  }
+}
 
 /**
  * Query Claude LLM for structured JSON output.
