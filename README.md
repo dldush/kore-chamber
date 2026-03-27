@@ -1,5 +1,7 @@
 # Kore Chamber
 
+> Inspired by [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)
+
 ### Give your AI your brain.
 
 [한국어](README.ko.md)

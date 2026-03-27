@@ -1,5 +1,7 @@
 # Kore-Chamber Installation Guide
 
+> Inspired by [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)'s AI-driven installation approach.
+
 ## For Users
 
 ```bash
