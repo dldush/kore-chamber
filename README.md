@@ -128,23 +128,13 @@ Stores Sentinel-approved items directly in the main vault and applies profile up
 
 #### Explorer — Gap Analyst
 
-Performs comprehensive vault analysis and shows what you don't know.
+Shows what you don't know. Fast — reads MOC files only, no individual note scanning.
 
-**5-step analysis:**
-1. **Vault Intelligence** — Domain coverage, connection topology, type distribution
-2. **Competency Mapping** — Dependency tree per goal → map vault onto it
-3. **Gap Analysis** — Goal-based gaps, depth gaps, connection gaps
-4. **Learning Direction** — ZPD-based 3–5 specific topic recommendations
-5. **Exploration Log** — Tracks recommendation history to prevent repetition
+**2-step analysis:**
+1. **Quick Scan** — Read MOC files only → domain coverage at a glance
+2. **Gap Inference** — LLM domain knowledge + MY-PROFILE goals + MOC scan → 3-5 specific gaps
 
-**Methodologies:**
-
-| Method | Field | Application |
-|--------|-------|-------------|
-| Competency Mapping | HR/Education | **Dependency tree** per goal → map vault notes → empty nodes = gaps |
-| Zone of Proximal Development | Vygotsky | Prioritize topics that **slightly stretch** current level — skip unreachable topics |
-| Curriculum Learning | ML/Education | Respect **dependency order** — "can't learn event loop without async basics" |
-| Spreading Activation | Cognitive Psychology | Detect **dead zones**, **activation cliffs**, and **bridge nodes** in vault topology |
+> No dependency trees, no topology analysis, no note sampling. MOCs → goals → gaps → recommendations. Speed over exhaustiveness.
 
 ## Installation
 
