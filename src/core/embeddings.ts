@@ -24,7 +24,8 @@ async function loadPipeline(): Promise<FeaturePipeline> {
   if (_pipeline) return _pipeline;
   const { pipeline } = await import("@huggingface/transformers");
   _pipeline = await pipeline("feature-extraction", MODEL_NAME, {
-    progress_callback: () => {},  // suppress download logs to stdout
+    dtype: "q8",              // quantized: ~125MB vs 448MB fp32
+    progress_callback: () => {},
   }) as unknown as FeaturePipeline;
   return _pipeline;
 }
