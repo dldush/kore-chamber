@@ -10,6 +10,13 @@ export interface ConversationTurn {
   timestamp: string;
 }
 
+export interface JsonlFileInfo {
+  path: string;
+  sessionId: string;
+  mtime: number;
+  projectPath: string;
+}
+
 interface JsonlEntry {
   type: "user" | "assistant" | "system" | "file-history-snapshot";
   isSidechain?: boolean;
@@ -40,7 +47,7 @@ const NOISE_PATTERNS = [
 
 // ─── Find JSONL ───
 
-export function findLatestJsonl(sessionId?: string): string {
+export function findAllJsonl(sessionId?: string): JsonlFileInfo[] {
   const claudeDir = path.join(homedir(), ".claude");
   const projectsDir = path.join(claudeDir, "projects");
 
@@ -48,23 +55,31 @@ export function findLatestJsonl(sessionId?: string): string {
     throw new Error(`Claude 프로젝트 디렉토리를 찾을 수 없습니다: ${projectsDir}`);
   }
 
-  const jsonlFiles: { path: string; mtime: number }[] = [];
+  const jsonlFiles: JsonlFileInfo[] = [];
 
-  const walk = (dir: string) => {
+  const walk = (dir: string, projectPath: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         // Skip subagents directories
         if (entry.name === "subagents") continue;
-        walk(full);
+        walk(full, projectPath);
       } else if (entry.name.endsWith(".jsonl")) {
         if (sessionId && !entry.name.startsWith(sessionId)) continue;
-        jsonlFiles.push({ path: full, mtime: fs.statSync(full).mtimeMs });
+        jsonlFiles.push({
+          path: full,
+          sessionId: path.basename(entry.name, ".jsonl"),
+          mtime: fs.statSync(full).mtimeMs,
+          projectPath,
+        });
       }
     }
   };
 
-  walk(projectsDir);
+  for (const entry of fs.readdirSync(projectsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    walk(path.join(projectsDir, entry.name), entry.name);
+  }
 
   if (jsonlFiles.length === 0) {
     throw new Error(
@@ -76,7 +91,31 @@ export function findLatestJsonl(sessionId?: string): string {
 
   // Sort by modification time, most recent first
   jsonlFiles.sort((a, b) => b.mtime - a.mtime);
-  return jsonlFiles[0].path;
+  return jsonlFiles;
+}
+
+export function findLatestJsonl(sessionId?: string): string {
+  return findAllJsonl(sessionId)[0].path;
+}
+
+export function getJsonlInfoByPath(jsonlPath: string, projectDir?: string): JsonlFileInfo {
+  const resolved = path.resolve(jsonlPath.replace(/^~/, homedir()));
+
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`JSONL 파일을 찾을 수 없습니다: ${resolved}`);
+  }
+
+  if (!resolved.endsWith(".jsonl")) {
+    throw new Error(`JSONL 파일만 처리할 수 있습니다: ${resolved}`);
+  }
+
+  const stats = fs.statSync(resolved);
+  return {
+    path: resolved,
+    sessionId: path.basename(resolved, ".jsonl"),
+    mtime: stats.mtimeMs,
+    projectPath: inferProjectPath(resolved, projectDir),
+  };
 }
 
 // ─── Parse Session ───
@@ -153,4 +192,19 @@ export function formatConversation(turns: ConversationTurn[]): string {
   return turns
     .map((t) => `[${t.role === "user" ? "User" : "Assistant"}]\n${t.text}`)
     .join("\n\n---\n\n");
+}
+
+function inferProjectPath(jsonlPath: string, projectDir?: string): string {
+  if (projectDir) {
+    return path.basename(projectDir);
+  }
+
+  const projectsDir = path.join(homedir(), ".claude", "projects");
+  const relative = path.relative(projectsDir, jsonlPath);
+
+  if (!relative.startsWith("..")) {
+    return relative.split(path.sep)[0] || path.basename(path.dirname(jsonlPath));
+  }
+
+  return path.basename(path.dirname(jsonlPath));
 }

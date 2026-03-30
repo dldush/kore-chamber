@@ -1,0 +1,11 @@
+.claude/
+docs/
+src/
+node_modules/
+.env
+.env.local
+*.log
+.DS_Store
+MIGRATION-PLAN.md
+tsconfig.json
+pnpm-lock.yaml

@@ -2,20 +2,27 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as yamlParse } from "yaml";
 import { homedir } from "./platform.js";
+import { LATEST_CONFIG_VERSION } from "./migrate.js";
+import type { DedupThresholds } from "./dedup.js";
 
 const KORE_DIR = path.join(homedir(), ".kore-chamber");
 
 export interface KoreConfig {
   vaultPath: string;
-  historyPaths?: string[];
+  dedup: DedupThresholds;
 }
 
+const DEFAULT_DEDUP: DedupThresholds = {
+  clearNew: 0.30,
+  clearDuplicate: 0.70,
+};
+
 export function loadConfig(): KoreConfig {
-  const configPath = path.join(KORE_DIR, "config.yaml");
+  const configPath = getConfigPath();
 
   if (!fs.existsSync(configPath)) {
     throw new Error(
-      `설정 파일을 찾을 수 없습니다: ${configPath}\nnpx kore-chamber init을 먼저 실행하세요.`
+      `설정 파일을 찾을 수 없습니다: ${configPath}\n터미널에서 kore-chamber를 실행해 초기 설정을 완료하세요.`
     );
   }
 
@@ -25,12 +32,27 @@ export function loadConfig(): KoreConfig {
     throw new Error("config.yaml에 vault_path가 없습니다.");
   }
 
+  const dedupRaw = raw.dedup as Record<string, number> | undefined;
+
   return {
     vaultPath: raw.vault_path,
-    historyPaths: raw.history_paths,
+    dedup: {
+      clearNew: dedupRaw?.clear_new ?? DEFAULT_DEDUP.clearNew,
+      clearDuplicate: dedupRaw?.clear_duplicate ?? DEFAULT_DEDUP.clearDuplicate,
+    },
   };
 }
 
 export function getVaultPath(): string {
   return loadConfig().vaultPath;
 }
+
+export function getConfigPath(): string {
+  return path.join(KORE_DIR, "config.yaml");
+}
+
+export function hasConfig(): boolean {
+  return fs.existsSync(getConfigPath());
+}
+
+export { LATEST_CONFIG_VERSION };
