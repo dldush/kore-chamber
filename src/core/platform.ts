@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { execSync } from "node:child_process";
 
 /**
  * Cross-platform home directory.
@@ -47,13 +48,29 @@ export function isEphemeralInstall(): boolean {
 
 /**
  * Detect system language. Returns "ko" for Korean, "en" otherwise.
+ * Priority: macOS AppleLanguages > LANG env > Intl
  */
 export function systemLang(): "ko" | "en" {
+  // macOS: check display language via defaults (independent of terminal LANG)
+  if (process.platform === "darwin") {
+    try {
+      const out = execSync("defaults read -g AppleLanguages", {
+        timeout: 2000,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).toString();
+      if (/\bko\b/.test(out)) return "ko";
+    } catch { /* defaults not available */ }
+  }
+
+  // LANG / LANGUAGE env vars
+  const env = process.env.LANG ?? process.env.LANGUAGE ?? "";
+  if (env.startsWith("ko")) return "ko";
+
+  // Intl fallback
   try {
     const locale = Intl.DateTimeFormat().resolvedOptions().locale;
     if (locale.startsWith("ko")) return "ko";
   } catch { /* Intl not available */ }
-  const env = process.env.LANG ?? process.env.LANGUAGE ?? "";
-  if (env.startsWith("ko")) return "ko";
+
   return "en";
 }
