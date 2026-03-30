@@ -7,17 +7,17 @@
   "author": "itoz",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dldush/kore-chamber"
+    "url": "git+https://github.com/dldush/kore-chamber.git"
   },
   "bin": {
-    "kore-chamber": "./dist/cli/index.js"
+    "kore-chamber": "dist/cli/index.js"
   },
   "files": [
     "dist/",
     "README.md"
   ],
   "scripts": {
-    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc && node -e \"const fs=require('fs'); const src='src/templates'; const dest='dist/templates'; fs.mkdirSync(dest,{recursive:true}); for (const file of fs.readdirSync(src)) fs.copyFileSync(src + '/' + file, dest + '/' + file);\"",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc && node -e \"const fs=require('fs'); const src='src/templates'; const dest='dist/templates'; fs.mkdirSync(dest,{recursive:true}); for (const file of fs.readdirSync(src)) fs.copyFileSync(src + '/' + file, dest + '/' + file);\" && chmod +x dist/cli/index.js",
     "dev": "tsx src/cli/init.ts"
   },
   "engines": {
