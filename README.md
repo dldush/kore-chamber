@@ -65,9 +65,14 @@ At the start of every session, Kore Chamber reads `MY-PROFILE.md` and scores you
 
 > *"I know that I know nothing."* — Socrates
 
-Knowing what you don't know is the beginning of real learning. `explore` analyzes your vault against your stated goals in `MY-PROFILE.md` and surfaces the gaps — the topics that are directly blocking your progress, the fundamentals you skipped, the areas you've avoided without realizing it.
+Knowing what you don't know is the beginning of real learning. `explore` cross-references your vault against the goals in `MY-PROFILE.md` and produces a gap map with four result types:
 
-This isn't a list of random suggestions. It's a gap map built from the delta between where you are and where you're trying to go. Use it when you feel like you're learning but not progressing, or when you want to set a direction for your next learning sprint.
+- **Missing** — appears in your goals, zero notes in vault
+- **Shallow** — has concept notes but no troubleshooting or patterns
+- **Fragile** — exists but structurally weak: low confidence, stale, or disconnected
+- **Adjacent** — not in your goals yet, but a natural next step based on what's missing
+
+The analysis is deterministic. For a given vault state, you always get the same result. Goal topics are parsed from your profile via LLM and cached by profile hash — re-running `explore` after the vault grows costs no additional API calls unless your goals change. LLM is used for two things only: extracting specific topics from your free-form goals (cached), and suggesting adjacent topics with a final observation.
 
 ## Commands
 
@@ -76,6 +81,8 @@ This isn't a list of random suggestions. It's a gap map built from the delta bet
 kore-chamber collect               # collect the latest unprocessed session
 kore-chamber collect --all         # collect all unprocessed sessions
 kore-chamber collect --dry-run     # preview without writing
+kore-chamber explore               # gap analysis (missing / shallow / fragile / adjacent)
+kore-chamber explore --refresh     # re-parse goal topics (clears cache)
 kore-chamber status                # vault metrics
 kore-chamber doctor                # system check (vault, auth, hooks)
 
