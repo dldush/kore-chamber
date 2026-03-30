@@ -9,7 +9,6 @@ const KORE_DIR = path.join(homedir(), ".kore-chamber");
 
 export interface KoreConfig {
   vaultPath: string;
-  historyPaths?: string[];
   dedup: DedupThresholds;
 }
 
@@ -37,7 +36,6 @@ export function loadConfig(): KoreConfig {
 
   return {
     vaultPath: raw.vault_path,
-    historyPaths: raw.history_paths,
     dedup: {
       clearNew: dedupRaw?.clear_new ?? DEFAULT_DEDUP.clearNew,
       clearDuplicate: dedupRaw?.clear_duplicate ?? DEFAULT_DEDUP.clearDuplicate,

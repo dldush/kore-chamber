@@ -10,6 +10,13 @@ export interface ConversationTurn {
   timestamp: string;
 }
 
+export interface JsonlFileInfo {
+  path: string;
+  sessionId: string;
+  mtime: number;
+  projectPath: string;
+}
+
 interface JsonlEntry {
   type: "user" | "assistant" | "system" | "file-history-snapshot";
   isSidechain?: boolean;
@@ -40,7 +47,7 @@ const NOISE_PATTERNS = [
 
 // ─── Find JSONL ───
 
-export function findLatestJsonl(sessionId?: string): string {
+export function findAllJsonl(sessionId?: string): JsonlFileInfo[] {
   const claudeDir = path.join(homedir(), ".claude");
   const projectsDir = path.join(claudeDir, "projects");
 
@@ -48,23 +55,31 @@ export function findLatestJsonl(sessionId?: string): string {
     throw new Error(`Claude 프로젝트 디렉토리를 찾을 수 없습니다: ${projectsDir}`);
   }
 
-  const jsonlFiles: { path: string; mtime: number }[] = [];
+  const jsonlFiles: JsonlFileInfo[] = [];
 
-  const walk = (dir: string) => {
+  const walk = (dir: string, projectPath: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
         // Skip subagents directories
         if (entry.name === "subagents") continue;
-        walk(full);
+        walk(full, projectPath);
       } else if (entry.name.endsWith(".jsonl")) {
         if (sessionId && !entry.name.startsWith(sessionId)) continue;
-        jsonlFiles.push({ path: full, mtime: fs.statSync(full).mtimeMs });
+        jsonlFiles.push({
+          path: full,
+          sessionId: path.basename(entry.name, ".jsonl"),
+          mtime: fs.statSync(full).mtimeMs,
+          projectPath,
+        });
       }
     }
   };
 
-  walk(projectsDir);
+  for (const entry of fs.readdirSync(projectsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    walk(path.join(projectsDir, entry.name), entry.name);
+  }
 
   if (jsonlFiles.length === 0) {
     throw new Error(
@@ -76,7 +91,11 @@ export function findLatestJsonl(sessionId?: string): string {
 
   // Sort by modification time, most recent first
   jsonlFiles.sort((a, b) => b.mtime - a.mtime);
-  return jsonlFiles[0].path;
+  return jsonlFiles;
+}
+
+export function findLatestJsonl(sessionId?: string): string {
+  return findAllJsonl(sessionId)[0].path;
 }
 
 // ─── Parse Session ───

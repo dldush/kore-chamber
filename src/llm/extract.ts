@@ -14,17 +14,8 @@ export interface KnowledgeItem {
   source_context: string;
 }
 
-export interface ProfileUpdate {
-  dimension: "knowledge" | "goal" | "preference";
-  current: string;
-  observed: string;
-  evidence: string;
-  confidence: "high" | "medium" | "low";
-}
-
 export interface ExtractionResult {
   knowledge_items: KnowledgeItem[];
-  profile_updates: ProfileUpdate[];
 }
 
 // ─── JSON Schema for LLM output ───
@@ -63,44 +54,14 @@ const EXTRACTION_SCHEMA = {
         required: ["title", "summary", "category", "tags", "content", "source_context"],
       },
     },
-    profile_updates: {
-      type: "array",
-      items: {
-        type: "object",
-        properties: {
-          dimension: {
-            type: "string",
-            enum: ["knowledge", "goal", "preference"],
-          },
-          current: {
-            type: "string",
-            description: "What MY-PROFILE currently says about this",
-          },
-          observed: {
-            type: "string",
-            description: "What the conversation revealed",
-          },
-          evidence: {
-            type: "string",
-            description: "Direct quote from conversation",
-          },
-          confidence: {
-            type: "string",
-            enum: ["high", "medium", "low"],
-          },
-        },
-        required: ["dimension", "current", "observed", "evidence", "confidence"],
-      },
-    },
   },
-  required: ["knowledge_items", "profile_updates"],
+  required: ["knowledge_items"],
 };
 
 // ─── Prompt ───
 
 function buildPrompt(
   conversation: string,
-  profile: string,
   existingSummaries: string[]
 ): string {
   const summaryList =
@@ -108,7 +69,7 @@ function buildPrompt(
       ? existingSummaries.map((s) => `- ${s}`).join("\n")
       : "(empty vault)";
 
-  return `You are a knowledge extraction engine. Analyze the conversation below and extract knowledge items and profile updates.
+  return `You are a knowledge extraction engine. Analyze the conversation below and extract knowledge items.
 
 ## Rules
 
@@ -121,33 +82,23 @@ function buildPrompt(
 - Write content in the same language as the conversation
 - summary must be one sentence that captures the core concept — this is used for dedup and search
 
-### Profile Updates
-- Only flag changes with clear evidence from the conversation
-- "high" confidence: explicit statements ("I want to focus on backend now")
-- "medium" confidence: strong implications (user demonstrates advanced understanding)
-- "low" confidence: weak signals (might be temporary)
-
 ### Dedup Hint
 These summaries already exist in the vault. Do NOT extract items that overlap with these:
 ${summaryList}
 
-## User Profile
-${profile || "(no profile yet)"}
-
 ## Conversation
 ${conversation}
 
-Extract knowledge items and profile updates as JSON.`;
+Extract knowledge items as JSON.`;
 }
 
 // ─── Main function ───
 
 export async function extractKnowledge(
   conversation: string,
-  profile: string,
   existingSummaries: string[]
 ): Promise<ExtractionResult> {
-  const prompt = buildPrompt(conversation, profile, existingSummaries);
+  const prompt = buildPrompt(conversation, existingSummaries);
 
   const result = await queryLLM<ExtractionResult>(prompt, EXTRACTION_SCHEMA);
 
@@ -159,9 +110,6 @@ export async function extractKnowledge(
         item.category &&
         item.content &&
         item.content.length > 20
-    ),
-    profile_updates: (result.profile_updates || []).filter(
-      (update) => update.dimension && update.observed && update.evidence
     ),
   };
 }

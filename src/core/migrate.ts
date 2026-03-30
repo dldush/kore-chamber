@@ -7,7 +7,7 @@ const KORE_DIR = path.join(homedir(), ".kore-chamber");
 const CONFIG_PATH = path.join(KORE_DIR, "config.yaml");
 
 // Current schema version — bump when adding a new migration
-export const LATEST_CONFIG_VERSION = 2;
+export const LATEST_CONFIG_VERSION = 3;
 
 interface Migration {
   version: number;
@@ -30,6 +30,13 @@ const migrations: Migration[] = [
           clear_duplicate: 0.70,
         };
       }
+    },
+  },
+  {
+    version: 3,
+    description: "legacy history_paths 설정 제거",
+    migrate: (config) => {
+      delete config.history_paths;
     },
   },
 ];
@@ -72,32 +79,4 @@ export function runMigrations(): MigrationResult | null {
   fs.writeFileSync(CONFIG_PATH, yamlStringify(config));
 
   return { from: currentVersion, to: LATEST_CONFIG_VERSION, applied };
-}
-
-/**
- * Check if config needs migration. Prints a notice if outdated.
- * Call at the start of CLI commands so Claude Code skills can detect it.
- */
-export function checkPendingMigrations(): boolean {
-  if (!fs.existsSync(CONFIG_PATH)) return false;
-
-  try {
-    const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
-    const config: Record<string, unknown> = yamlParse(raw) || {};
-    const currentVersion = typeof config.config_version === "number"
-      ? config.config_version
-      : 1;
-
-    if (currentVersion < LATEST_CONFIG_VERSION) {
-      console.log(
-        `\n⚠️  [UPDATE AVAILABLE] Kore Chamber 설정이 최신 버전이 아닙니다 (v${currentVersion} → v${LATEST_CONFIG_VERSION}).`
-        + `\n   "npx kore-chamber update"를 실행하면 새로운 설정이 자동으로 적용됩니다.\n`
-      );
-      return true;
-    }
-  } catch {
-    // Ignore parse errors — doctor will catch them
-  }
-
-  return false;
 }

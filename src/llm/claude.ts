@@ -35,14 +35,17 @@ export function checkAuthStatus(): AuthStatus {
 
 /**
  * Launch interactive Claude OAuth login.
- * stdio is inherited so the user sees the browser prompt.
- * shell: true required for Windows.
+ * We delegate to the official Claude CLI REPL login flow (`/login`),
+ * so the browser-based auth remains owned by Claude itself.
  */
 export function doLogin(): boolean {
-  console.log("\n🔑 Claude login required. Opening browser...\n");
-  const result = spawnSync("claude", ["login"], {
+  console.log("\n🔑 Claude 로그인이 필요합니다.");
+  console.log("   이제 Claude CLI를 실행합니다.");
+  console.log("   Claude가 열리면 `/login`으로 브라우저 인증을 완료한 뒤 `/exit`로 돌아오세요.\n");
+
+  const result = spawnSync("claude", [], {
     stdio: "inherit",
-    timeout: 120_000,
+    timeout: 600_000,
     shell: true,
   });
   return result.status === 0;
@@ -63,7 +66,7 @@ export function ensureAuth(): void {
   const loginOk = doLogin();
   if (!loginOk) {
     throw new Error(
-      'Claude login failed.\nTry running "claude login" manually in your terminal.'
+      'Claude login failed.\nRun `claude`, complete `/login` in the interactive session, then try again.'
     );
   }
 

@@ -1,7 +1,7 @@
 {
   "name": "kore-chamber",
-  "version": "0.3.1",
-  "description": "Give your AI your brain — knowledge vault that breaks AI's context limits",
+  "version": "0.4.0",
+  "description": "Auto-crystallize Claude conversations into Obsidian notes",
   "type": "module",
   "license": "MIT",
   "author": "itoz",
@@ -14,11 +14,10 @@
   },
   "files": [
     "dist/",
-    ".claude/",
     "README.md"
   ],
   "scripts": {
-    "build": "tsc && cp -r src/templates dist/templates",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc && node -e \"const fs=require('fs'); const src='src/templates'; const dest='dist/templates'; fs.mkdirSync(dest,{recursive:true}); for (const file of fs.readdirSync(src)) fs.copyFileSync(src + '/' + file, dest + '/' + file);\"",
     "dev": "tsx src/cli/init.ts"
   },
   "engines": {

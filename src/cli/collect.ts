@@ -1,30 +1,22 @@
 import * as path from "node:path";
 import { loadConfig } from "../core/config.js";
-import { findLatestJsonl, parseSession, formatConversation } from "../core/jsonl.js";
+import { findAllJsonl, formatConversation, parseSession, type JsonlFileInfo } from "../core/jsonl.js";
 import {
-  getAllSummaries,
-  readNote,
-  readProfile,
-  writeNote,
-  getCategoryFolder,
-  updateProfileSection,
   bumpConfidence,
+  getAllSummaries,
+  getCategoryFolder,
+  readNote,
   type NoteFrontmatter,
+  writeNote,
 } from "../core/vault.js";
-import { checkDuplicate, batchDedup, type DedupThresholds } from "../core/dedup.js";
+import { addBatchLinks, addLinks, searchRelated } from "../core/linker.js";
+import { batchDedup, checkDuplicate, type DedupThresholds } from "../core/dedup.js";
+import { addToMOC, findBestMOC } from "../core/moc.js";
+import { extractKnowledge, judgeBorderline, mergeNotes, type KnowledgeItem } from "../llm/extract.js";
 import { generateSlug } from "../core/slug.js";
-import { findBestMOC, addToMOC } from "../core/moc.js";
-import { searchRelated, addLinks, addBatchLinks } from "../core/linker.js";
 import { ensureAuth } from "../llm/claude.js";
-import { checkPendingMigrations } from "../core/migrate.js";
-import {
-  extractKnowledge,
-  judgeBorderline,
-  mergeNotes,
-  type KnowledgeItem,
-} from "../llm/extract.js";
-
-// ─── Output types (JSON contract) ───
+import { runMigrations } from "../core/migrate.js";
+import { getUnprocessedSessions, markProcessed } from "../core/tracker.js";
 
 interface CollectOutput {
   ok: boolean;
@@ -36,8 +28,6 @@ interface CollectOutput {
   stored: StoredItem[];
   merged: MergedItem[];
   skipped: SkippedItem[];
-  profileUpdatesApplied: ProfileApplied[];
-  profileUpdatesPending: ProfilePending[];
   batchLinksAdded: number;
 }
 
@@ -63,24 +53,23 @@ interface SkippedItem {
   similarity: number;
 }
 
-interface ProfileApplied {
-  dimension: string;
-  confidence: "high";
-  summary: string;
+interface BatchCollectSummary {
+  totalSessions: number;
+  storedNotes: number;
+  mergedNotes: number;
+  skippedItems: number;
+  emptySessions: number;
+  dryRun: boolean;
 }
 
-interface ProfilePending {
-  id: string;
-  dimension: string;
-  confidence: "medium";
-  summary: string;
+interface BatchCollectOutput {
+  ok: boolean;
+  sessions: CollectOutput[];
+  summary: BatchCollectSummary;
 }
-
-// ─── Internal plan types ───
 
 interface CollectPlan {
   items: PlannedItem[];
-  profileUpdates: PlannedProfileUpdate[];
 }
 
 interface PlannedItem {
@@ -96,54 +85,76 @@ interface PlannedItem {
   skipReason?: string;
 }
 
-interface PlannedProfileUpdate {
-  dimension: string;
-  observed: string;
-  confidence: string;
-  action: "apply" | "suggest" | "ignore";
+interface PersistedNoteRef {
+  path: string;
+  slug: string;
 }
 
-// ─── Parse CLI args ───
+interface ExecResult {
+  slug: string;
+  relatedLinksAdded: number;
+}
 
 interface CollectArgs {
   dryRun: boolean;
   sessionId?: string;
   output: "json" | "markdown";
+  allUnprocessed: boolean;
 }
 
-function parseArgs(args: string[]): CollectArgs {
-  let dryRun = false;
-  let sessionId: string | undefined;
-  let output: "json" | "markdown" = "markdown";
-
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--dry-run") dryRun = true;
-    if (args[i] === "--session" && args[i + 1]) sessionId = args[++i];
-    if (args[i] === "--output" && args[i + 1]) {
-      output = args[++i] === "json" ? "json" : "markdown";
-    }
-  }
-
-  return { dryRun, sessionId, output };
+interface CollectSessionOptions {
+  dryRun: boolean;
+  log: (...args: unknown[]) => void;
+  showBanner?: boolean;
 }
-
-// ─── Main ───
 
 export async function runCollect(args: string[] = []) {
-  const { dryRun, sessionId, output } = parseArgs(args);
+  runMigrations();
+
+  const { dryRun, sessionId, output, allUnprocessed } = parseArgs(args);
   const isJson = output === "json";
   const log = isJson ? () => {} : console.log.bind(console);
 
   try {
-    const result = await collect(dryRun, sessionId, log);
+    if (allUnprocessed) {
+      const targets = getUnprocessedSessions(findAllJsonl());
+      if (targets.length === 0) {
+        emitNoSessions(isJson, "미처리 세션이 없습니다.");
+        return;
+      }
 
+      log(`\n📥 미처리 세션 ${targets.length}개 발견`);
+      log(`   ${dryRun ? "dry-run 모드입니다." : "LLM API 토큰이 사용됩니다."}`);
+      log(`   예상 시간: ~${estimateTime(targets.length)}\n`);
+
+      ensureAuth();
+      const results = await collectBatch(targets, { dryRun, log });
+      if (isJson) {
+        console.log(JSON.stringify(results, null, 2));
+      }
+      return;
+    }
+
+    const target = sessionId
+      ? findAllJsonl(sessionId)[0]
+      : getUnprocessedSessions(findAllJsonl())[0];
+
+    if (!target) {
+      emitNoSessions(isJson, sessionId
+        ? `세션 ${sessionId}에 해당하는 JSONL 파일을 찾을 수 없습니다.`
+        : "미처리 세션이 없습니다.");
+      return;
+    }
+
+    ensureAuth();
+    const result = await collectSession(target, { dryRun, log, showBanner: true });
     if (isJson) {
       console.log(JSON.stringify(result, null, 2));
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     if (isJson) {
-      console.log(JSON.stringify({ ok: false, error: message }));
+      console.log(JSON.stringify({ ok: false, error: message }, null, 2));
     } else {
       console.error(`\n❌ ${message}\n`);
     }
@@ -151,109 +162,139 @@ export async function runCollect(args: string[] = []) {
   }
 }
 
-async function collect(
-  dryRun: boolean,
-  sessionId: string | undefined,
-  log: (...args: unknown[]) => void
-): Promise<CollectOutput> {
-  checkPendingMigrations();
+function parseArgs(args: string[]): CollectArgs {
+  let dryRun = false;
+  let sessionId: string | undefined;
+  let output: "json" | "markdown" = "markdown";
+  let allUnprocessed = false;
 
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--dry-run") dryRun = true;
+    if (args[i] === "--all") allUnprocessed = true;
+    if (args[i] === "--session" && args[i + 1]) sessionId = args[++i];
+    if (args[i] === "--output" && args[i + 1]) {
+      output = args[++i] === "json" ? "json" : "markdown";
+    }
+  }
+
+  if (allUnprocessed && sessionId) {
+    throw new Error("--all과 --session은 함께 사용할 수 없습니다.");
+  }
+
+  return { dryRun, sessionId, output, allUnprocessed };
+}
+
+async function collectBatch(
+  targets: JsonlFileInfo[],
+  options: { dryRun: boolean; log: (...args: unknown[]) => void }
+): Promise<BatchCollectOutput> {
+  const results: CollectOutput[] = [];
+
+  for (const [index, target] of targets.entries()) {
+    options.log(`[${index + 1}/${targets.length}] ${target.projectPath}/${path.basename(target.path)}`);
+    const nestedLog = createPrefixedLogger(options.log, "   ");
+    const result = await collectSession(target, {
+      dryRun: options.dryRun,
+      log: nestedLog,
+      showBanner: false,
+    });
+    results.push(result);
+    options.log("");
+  }
+
+  const summary = buildBatchSummary(results, options.dryRun);
+  options.log("━━━ Collect 완료 ━━━");
+  options.log(`  처리: ${summary.totalSessions}개 세션`);
+  options.log(`  저장: ${summary.storedNotes}개 노트`);
+  options.log(`  병합: ${summary.mergedNotes}개`);
+  options.log(`  중복/건너뜀: ${summary.skippedItems}개`);
+  options.log(`  빈 결과: ${summary.emptySessions}개 세션`);
+  options.log("━━━━━━━━━━━━━━━\n");
+
+  return {
+    ok: true,
+    sessions: results,
+    summary,
+  };
+}
+
+async function collectSession(
+  target: JsonlFileInfo,
+  options: CollectSessionOptions
+): Promise<CollectOutput> {
   const config = loadConfig();
   const { vaultPath, dedup: dedupThresholds } = config;
 
-  log(`\n🧠 Kore Chamber — collect${dryRun ? " (dry-run)" : ""}\n`);
+  if (options.showBanner !== false) {
+    options.log(`\n🧠 Kore Chamber — collect${options.dryRun ? " (dry-run)" : ""}\n`);
+  }
 
-  // 1. Find and parse JSONL
-  log("📜 세션 로그 탐색...");
-  const jsonlPath = findLatestJsonl(sessionId);
-  log(`   ${path.basename(jsonlPath)}`);
+  options.log("📜 세션 로그 탐색...");
+  options.log(`   ${path.basename(target.path)}`);
 
-  const turns = parseSession(jsonlPath);
-  const userTurns = turns.filter((t) => t.role === "user").length;
+  const turns = parseSession(target.path);
+  const userTurns = turns.filter((turn) => turn.role === "user").length;
 
   const baseOutput: CollectOutput = {
     ok: true,
-    sessionId: sessionId || path.basename(jsonlPath, ".jsonl"),
-    transcriptPath: jsonlPath,
+    sessionId: target.sessionId,
+    transcriptPath: target.path,
     turns: turns.length,
     knowledgeItems: 0,
     stored: [],
     merged: [],
     skipped: [],
-    profileUpdatesApplied: [],
-    profileUpdatesPending: [],
     batchLinksAdded: 0,
   };
 
   if (userTurns < 3) {
-    log("\n⏭️  대화가 너무 짧습니다 (3턴 미만). 건너뜁니다.\n");
+    options.log("\n⏭️  대화가 너무 짧습니다 (3턴 미만). 건너뜁니다.");
+    maybeMarkProcessed(options.dryRun, target, 0);
     return baseOutput;
   }
-  log(`   ${turns.length}개 메시지 (사용자 ${userTurns}턴)\n`);
+  options.log(`   ${turns.length}개 메시지 (사용자 ${userTurns}턴)\n`);
 
-  // 2. Load vault state
   const existingSummaries = getAllSummaries(vaultPath);
-  const profile = readProfile(vaultPath);
   const conversation = formatConversation(turns);
 
-  // 3. Auth check + LLM extraction
-  log("🔐 Claude 인증 확인...");
-  ensureAuth();
-  log("🤖 지식 추출 중...");
+  options.log("🤖 지식 추출 중...");
   const extraction = await extractKnowledge(
     conversation,
-    profile,
-    existingSummaries.map((s) => s.summary).filter(Boolean)
+    existingSummaries.map((summary) => summary.summary).filter(Boolean)
   );
 
-  if (extraction.knowledge_items.length === 0 && extraction.profile_updates.length === 0) {
-    log("\n⏭️  추출할 지식이 없습니다.\n");
+  if (extraction.knowledge_items.length === 0) {
+    options.log("\n⏭️  추출할 지식이 없습니다.");
+    maybeMarkProcessed(options.dryRun, target, 0);
     return baseOutput;
   }
 
   baseOutput.knowledgeItems = extraction.knowledge_items.length;
-  log(`   ${extraction.knowledge_items.length}개 항목 추출\n`);
+  options.log(`   ${extraction.knowledge_items.length}개 항목 추출\n`);
 
-  // 4. Batch dedup (within extraction)
-  const keepIndices = batchDedup(extraction.knowledge_items.map((i) => i.summary), dedupThresholds);
-  const uniqueItems = keepIndices.map((i) => extraction.knowledge_items[i]);
+  const keepIndices = batchDedup(
+    extraction.knowledge_items.map((item) => item.summary),
+    dedupThresholds
+  );
+  const uniqueItems = keepIndices.map((index) => extraction.knowledge_items[index]);
 
-  // 5. Plan each item
-  log("📋 저장 계획 수립...");
+  options.log("📋 저장 계획 수립...");
   const plan = await buildPlan(uniqueItems, existingSummaries, vaultPath, dedupThresholds);
+  printPlan(plan, options.log);
 
-  // 6. Plan profile updates
-  for (const update of extraction.profile_updates) {
-    let action: "apply" | "suggest" | "ignore";
-    if (update.confidence === "high") action = "apply";
-    else if (update.confidence === "medium") action = "suggest";
-    else action = "ignore";
-
-    plan.profileUpdates.push({
-      dimension: update.dimension,
-      observed: update.observed,
-      confidence: update.confidence,
-      action,
-    });
-  }
-
-  // 7. Display plan (markdown only)
-  printPlan(plan, log);
-
-  // 8. Execute (unless dry-run)
-  if (dryRun) {
-    log("🔍 dry-run 모드: 파일 변경 없음.\n");
+  if (options.dryRun) {
+    options.log("🔍 dry-run 모드: 파일 변경 없음.\n");
     return buildOutput(baseOutput, plan, [], 0);
   }
 
-  log("\n✏️  저장 중...\n");
-  const { results: execResults, batchLinksAdded } = await executePlan(plan, vaultPath, extraction.profile_updates, log);
+  options.log("\n✏️  저장 중...\n");
+  const { results: execResults, batchLinksAdded } = await executePlan(plan, vaultPath, options.log);
+  const output = buildOutput(baseOutput, plan, execResults, batchLinksAdded);
+  maybeMarkProcessed(false, target, output.stored.length);
 
-  log("━━━ Collect 완료 ━━━\n");
-  return buildOutput(baseOutput, plan, execResults, batchLinksAdded);
+  options.log("━━━ Collect 완료 ━━━\n");
+  return output;
 }
-
-// ─── Build Plan ───
 
 async function buildPlan(
   items: KnowledgeItem[],
@@ -261,7 +302,7 @@ async function buildPlan(
   vaultPath: string,
   thresholds: DedupThresholds
 ): Promise<CollectPlan> {
-  const plan: CollectPlan = { items: [], profileUpdates: [] };
+  const plan: CollectPlan = { items: [] };
 
   for (const item of items) {
     const dedup = checkDuplicate(item.summary, existingSummaries, thresholds);
@@ -280,10 +321,13 @@ async function buildPlan(
       action = "skip";
       skipReason = `duplicate (${(dedup.similarity * 100).toFixed(0)}% — ${dedup.similarNote})`;
     } else {
-      const existing = existingSummaries.find((s) => s.slug === dedup.similarNote);
+      const existing = existingSummaries.find((summary) => summary.slug === dedup.similarNote);
       if (existing) {
         const judgment = await judgeBorderline(
-          item.summary, item.content, existing.summary, existing.slug
+          item.summary,
+          item.content,
+          existing.summary,
+          existing.slug
         );
         action = judgment.verdict === "skip" ? "skip" : judgment.verdict;
         if (action === "merge") mergeTarget = existing.path;
@@ -293,136 +337,122 @@ async function buildPlan(
       }
     }
 
+    const persisted = getPersistedNoteRef({ action, mergeTarget, filePath, slug });
     const related = action !== "skip"
-      ? searchRelated(slug, item.tags, item.summary, existingSummaries, mocPath)
+      ? searchRelated(persisted.slug, item.tags, item.summary, existingSummaries, mocPath)
       : [];
 
     plan.items.push({
-      item, action, slug, folder, filePath,
-      dedupSimilarity: dedup.similarity, mergeTarget, mocPath,
-      relatedCount: related.length, skipReason,
+      item,
+      action,
+      slug,
+      folder,
+      filePath,
+      dedupSimilarity: dedup.similarity,
+      mergeTarget,
+      mocPath,
+      relatedCount: related.length,
+      skipReason,
     });
   }
 
   return plan;
 }
 
-// ─── Print Plan (markdown) ───
-
 function printPlan(
   plan: CollectPlan,
   log: (...args: unknown[]) => void
 ) {
-  log(`\n━━━ 저장 계획 ━━━\n`);
+  log("\n━━━ 저장 계획 ━━━\n");
 
-  for (const p of plan.items) {
-    const icon = p.action === "new" ? "📝" : p.action === "merge" ? "🔄" : "⏭️";
-    const label =
-      p.action === "new" ? "새 노트" :
-      p.action === "merge" ? `병합 → ${path.basename(p.mergeTarget || "")}` :
-      `건너뜀: ${p.skipReason}`;
+  for (const planned of plan.items) {
+    const icon = planned.action === "new" ? "📝" : planned.action === "merge" ? "🔄" : "⏭️";
+    const label = planned.action === "new"
+      ? "새 노트"
+      : planned.action === "merge"
+        ? `병합 → ${path.basename(planned.mergeTarget || "")}`
+        : `건너뜀: ${planned.skipReason}`;
 
-    log(`${icon} ${p.item.title}`);
+    log(`${icon} ${planned.item.title}`);
     log(`   ${label}`);
-    if (p.action !== "skip") {
-      log(`   📁 ${p.folder}/${p.slug}.md`);
-      if (p.mocPath) log(`   📋 MOC: ${path.basename(p.mocPath)}`);
-      if (p.relatedCount > 0) log(`   🔗 관련 노트: ${p.relatedCount}개`);
+    if (planned.action !== "skip") {
+      log(`   📁 ${planned.folder}/${planned.slug}.md`);
+      if (planned.mocPath) log(`   📋 MOC: ${path.basename(planned.mocPath)}`);
+      if (planned.relatedCount > 0) log(`   🔗 관련 노트: ${planned.relatedCount}개`);
     }
-    log();
+    log("");
   }
 
-  const applied = plan.profileUpdates.filter((p) => p.action === "apply");
-  const suggested = plan.profileUpdates.filter((p) => p.action === "suggest");
-
-  if (applied.length > 0) {
-    log(`👤 프로필 자동 업데이트: ${applied.length}개`);
-    for (const u of applied) log(`   ✅ [${u.dimension}] ${u.observed}`);
-  }
-  if (suggested.length > 0) {
-    log(`👤 프로필 검토 필요: ${suggested.length}개`);
-    for (const u of suggested) log(`   ⚠️  [${u.dimension}] ${u.observed}`);
-  }
-
-  log(`━━━━━━━━━━━━━━━`);
-}
-
-// ─── Execute Plan ───
-
-interface ExecResult {
-  slug: string;
-  relatedLinksAdded: number;
+  log("━━━━━━━━━━━━━━━");
 }
 
 async function executePlan(
   plan: CollectPlan,
   vaultPath: string,
-  profileUpdates: { dimension: string; observed: string; confidence: string }[],
   log: (...args: unknown[]) => void
 ): Promise<{ results: ExecResult[]; batchLinksAdded: number }> {
-  const storedNotes: { path: string; slug: string }[] = [];
+  const storedNotes: PersistedNoteRef[] = [];
   const allSummaries = getAllSummaries(vaultPath);
   const results: ExecResult[] = [];
 
-  for (const p of plan.items) {
-    if (p.action === "skip") continue;
+  for (const planned of plan.items) {
+    if (planned.action === "skip") continue;
 
-    if (p.action === "new") {
+    const persisted = getPersistedNoteRef(planned);
+
+    if (planned.action === "new") {
       const today = new Date().toISOString().split("T")[0];
       const frontmatter: NoteFrontmatter = {
         created: today,
-        tags: p.item.tags,
-        type: p.item.category,
-        summary: p.item.summary,
+        tags: planned.item.tags,
+        type: planned.item.category,
+        summary: planned.item.summary,
         confidence: 0.5,
       };
-      const body = `# ${p.slug}\n\n${p.item.content}\n\n## 관련 노트\n`;
-      writeNote(p.filePath, frontmatter, body);
-      log(`  📝 ${p.folder}/${p.slug}.md`);
-    } else if (p.action === "merge" && p.mergeTarget) {
-      const existing = readNote(p.mergeTarget);
+      const body = `# ${planned.slug}\n\n${planned.item.content}\n\n## 관련 노트\n`;
+      writeNote(planned.filePath, frontmatter, body);
+      log(`  📝 ${planned.folder}/${planned.slug}.md`);
+    } else if (planned.action === "merge" && planned.mergeTarget) {
+      const existing = readNote(persisted.path);
       if (existing) {
         const merged = await mergeNotes(
-          existing.body, existing.frontmatter.summary,
-          p.item.content, p.item.summary
+          existing.body,
+          existing.frontmatter.summary,
+          planned.item.content,
+          planned.item.summary
         );
         existing.frontmatter.summary = merged.updated_summary;
-        writeNote(p.mergeTarget, existing.frontmatter, merged.merged_body);
-        bumpConfidence(p.mergeTarget);
-        log(`  🔄 ${path.basename(p.mergeTarget)} (병합, confidence +0.1)`);
+        writeNote(persisted.path, existing.frontmatter, merged.merged_body);
+        bumpConfidence(persisted.path);
+        log(`  🔄 ${path.basename(persisted.path)} (병합, confidence +0.1)`);
       }
     }
 
-    if (p.mocPath) addToMOC(p.mocPath, p.slug);
+    if (planned.mocPath) addToMOC(planned.mocPath, persisted.slug);
 
     const related = searchRelated(
-      p.slug, p.item.tags, p.item.summary, allSummaries, p.mocPath
+      persisted.slug,
+      planned.item.tags,
+      planned.item.summary,
+      allSummaries,
+      planned.mocPath
     );
-    const notePath = p.action === "merge" && p.mergeTarget ? p.mergeTarget : p.filePath;
-    const linkedCount = addLinks(notePath, p.slug, related);
+    const linkedCount = addLinks(persisted.path, persisted.slug, related);
     if (linkedCount > 0) log(`  🔗 ${linkedCount}개 링크 추가`);
 
-    storedNotes.push({ path: p.filePath, slug: p.slug });
-    results.push({ slug: p.slug, relatedLinksAdded: linkedCount });
+    storedNotes.push(persisted);
+    results.push({ slug: planned.slug, relatedLinksAdded: linkedCount });
   }
 
+  const uniqueStoredNotes = dedupePersistedNotes(storedNotes);
   let batchCount = 0;
-  if (storedNotes.length > 1) {
-    batchCount = addBatchLinks(storedNotes);
+  if (uniqueStoredNotes.length > 1) {
+    batchCount = addBatchLinks(uniqueStoredNotes);
     if (batchCount > 0) log(`  🔗 배치 상호 링크 ${batchCount}개`);
-  }
-
-  for (const update of profileUpdates) {
-    if (update.confidence === "high") {
-      updateProfileSection(vaultPath, dimensionToSection(update.dimension), update.observed);
-      log(`  👤 프로필 업데이트: [${update.dimension}] ${update.observed}`);
-    }
   }
 
   return { results, batchLinksAdded: batchCount };
 }
-
-// ─── Build JSON output ───
 
 function buildOutput(
   base: CollectOutput,
@@ -430,61 +460,122 @@ function buildOutput(
   execResults: ExecResult[],
   batchLinksAdded: number
 ): CollectOutput {
-  const resultMap = new Map(execResults.map((r) => [r.slug, r]));
+  const resultMap = new Map(execResults.map((result) => [result.slug, result]));
 
-  for (const p of plan.items) {
-    if (p.action === "new") {
+  for (const planned of plan.items) {
+    if (planned.action === "new") {
       base.stored.push({
-        slug: p.slug,
+        slug: planned.slug,
         action: "created",
-        folder: p.folder,
-        moc: p.mocPath ? path.basename(p.mocPath, ".md") : null,
-        relatedLinksAdded: resultMap.get(p.slug)?.relatedLinksAdded ?? 0,
+        folder: planned.folder,
+        moc: planned.mocPath ? path.basename(planned.mocPath, ".md") : null,
+        relatedLinksAdded: resultMap.get(planned.slug)?.relatedLinksAdded ?? 0,
       });
-    } else if (p.action === "merge") {
+    } else if (planned.action === "merge") {
       base.merged.push({
-        slug: p.slug,
+        slug: planned.slug,
         action: "merged",
-        mergeTarget: p.mergeTarget ? path.basename(p.mergeTarget) : "",
-        relatedLinksAdded: resultMap.get(p.slug)?.relatedLinksAdded ?? 0,
+        mergeTarget: planned.mergeTarget ? path.basename(planned.mergeTarget) : "",
+        relatedLinksAdded: resultMap.get(planned.slug)?.relatedLinksAdded ?? 0,
       });
     } else {
       base.skipped.push({
-        title: p.item.title,
-        reason: p.skipReason || "duplicate",
-        similarNote: p.mergeTarget ? path.basename(p.mergeTarget) : null,
-        similarity: p.dedupSimilarity,
+        title: planned.item.title,
+        reason: planned.skipReason || "duplicate",
+        similarNote: planned.mergeTarget ? path.basename(planned.mergeTarget) : null,
+        similarity: planned.dedupSimilarity,
       });
     }
   }
 
   base.batchLinksAdded = batchLinksAdded;
-
-  for (const u of plan.profileUpdates) {
-    if (u.action === "apply") {
-      base.profileUpdatesApplied.push({
-        dimension: u.dimension,
-        confidence: "high",
-        summary: u.observed,
-      });
-    } else if (u.action === "suggest") {
-      base.profileUpdatesPending.push({
-        id: `upd_${Math.random().toString(36).slice(2, 8)}`,
-        dimension: u.dimension,
-        confidence: "medium",
-        summary: u.observed,
-      });
-    }
-  }
-
   return base;
 }
 
-function dimensionToSection(dimension: string): string {
-  switch (dimension) {
-    case "knowledge": return "현재 집중 영역";
-    case "goal": return "목표";
-    case "preference": return "선호/성향";
-    default: return "기타";
+function buildBatchSummary(
+  results: CollectOutput[],
+  dryRun: boolean
+): BatchCollectSummary {
+  return {
+    totalSessions: results.length,
+    storedNotes: results.reduce((sum, result) => sum + result.stored.length, 0),
+    mergedNotes: results.reduce((sum, result) => sum + result.merged.length, 0),
+    skippedItems: results.reduce((sum, result) => sum + result.skipped.length, 0),
+    emptySessions: results.filter(
+      (result) =>
+        result.knowledgeItems === 0
+        && result.stored.length === 0
+        && result.merged.length === 0
+        && result.skipped.length === 0
+    ).length,
+    dryRun,
+  };
+}
+
+function maybeMarkProcessed(
+  dryRun: boolean,
+  target: JsonlFileInfo,
+  notesCreated: number
+) {
+  if (dryRun) return;
+  markProcessed(target.sessionId, target.path, notesCreated);
+}
+
+const SECONDS_PER_SESSION = 15;
+
+function estimateTime(sessionCount: number): string {
+  const totalSeconds = sessionCount * SECONDS_PER_SESSION;
+  if (totalSeconds < 60) return `${totalSeconds}초`;
+  const minutes = Math.ceil(totalSeconds / 60);
+  return `${minutes}분`;
+}
+
+function emitNoSessions(isJson: boolean, message: string) {
+  if (isJson) {
+    console.log(JSON.stringify({ ok: true, message }, null, 2));
+    return;
   }
+  console.log(`\n⏭️  ${message}\n`);
+}
+
+function getPersistedNoteRef(
+  item: Pick<PlannedItem, "action" | "mergeTarget" | "filePath" | "slug">
+): PersistedNoteRef {
+  if (item.action === "merge" && item.mergeTarget) {
+    return {
+      path: item.mergeTarget,
+      slug: path.basename(item.mergeTarget, ".md"),
+    };
+  }
+
+  return {
+    path: item.filePath,
+    slug: item.slug,
+  };
+}
+
+function dedupePersistedNotes(notes: PersistedNoteRef[]): PersistedNoteRef[] {
+  const unique = new Map<string, PersistedNoteRef>();
+
+  for (const note of notes) {
+    unique.set(note.path, note);
+  }
+
+  return [...unique.values()];
+}
+
+function createPrefixedLogger(
+  log: (...args: unknown[]) => void,
+  prefix: string
+): (...args: unknown[]) => void {
+  return (...args: unknown[]) => {
+    for (const arg of args) {
+      const text = String(arg);
+      const lines = text.split("\n");
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        log(`${prefix}${line}`);
+      }
+    }
+  };
 }

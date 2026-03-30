@@ -1,17 +1,19 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { loadConfig } from "../core/config.js";
-import { listNotes, getAllSummaries, extractLinks, readNote, getFreshness } from "../core/vault.js";
-import { checkPendingMigrations } from "../core/migrate.js";
+import { extractLinks, getAllSummaries, getFreshness, readNote } from "../core/vault.js";
+import { runMigrations } from "../core/migrate.js";
+import { findAllJsonl } from "../core/jsonl.js";
+import { getProcessedCount, getUnprocessedSessions } from "../core/tracker.js";
 
 export async function runStatus() {
-  checkPendingMigrations();
+  runMigrations();
+
   const config = loadConfig();
   const { vaultPath } = config;
 
   console.log("\n📊 Kore Chamber — status\n");
 
-  // Folder counts
   const folders = [
     { name: "00-Inbox", label: "미분류" },
     { name: "10-Concepts", label: "개념" },
@@ -30,17 +32,23 @@ export async function runStatus() {
 
   console.log(`\n  📝 총 노트: ${totalNotes}개`);
 
-  // MOC count
   const mocDir = path.join(vaultPath, "50-MOC");
   const mocCount = countMd(mocDir, "MOC-");
   console.log(`  🗂️  MOC: ${mocCount}개`);
 
+  try {
+    const allSessions = findAllJsonl();
+    const unprocessed = getUnprocessedSessions(allSessions);
+    console.log(`  📥 세션 추적: processed ${getProcessedCount()} / unprocessed ${unprocessed.length}`);
+  } catch {
+    console.log(`  📥 세션 추적: processed ${getProcessedCount()} / unprocessed 0`);
+  }
+
   if (totalNotes === 0) {
-    console.log("\n  볼트가 비어있습니다. /kc-collect로 지식을 수확하세요.\n");
+    console.log("\n  볼트가 비어있습니다. `kore-chamber collect`로 지식을 수집하세요.\n");
     return;
   }
 
-  // Orphan notes (not linked from any MOC)
   const allSummaries = getAllSummaries(vaultPath);
   const mocLinked = new Set<string>();
 
@@ -49,17 +57,16 @@ export async function runStatus() {
       if (!file.endsWith(".md")) continue;
       const content = fs.readFileSync(path.join(mocDir, file), "utf-8");
       const links = extractLinks(content);
-      links.forEach((l) => mocLinked.add(l));
+      links.forEach((link) => mocLinked.add(link));
     }
   }
 
-  const orphans = allSummaries.filter((n) => !mocLinked.has(n.slug));
+  const orphans = allSummaries.filter((note) => !mocLinked.has(note.slug));
   if (orphans.length > 0) {
     console.log(`  ⚠️  MOC 미등록: ${orphans.length}개`);
   }
 
-  // Broken links
-  const allSlugs = new Set(allSummaries.map((n) => n.slug));
+  const allSlugs = new Set(allSummaries.map((note) => note.slug));
   let brokenCount = 0;
   for (const note of allSummaries) {
     for (const link of note.links) {
@@ -70,10 +77,9 @@ export async function runStatus() {
     console.log(`  ⚠️  깨진 링크: ${brokenCount}개`);
   }
 
-  // Freshness distribution
   const freshness = { current: 0, aging: 0, stale: 0 };
-  for (const s of allSummaries) {
-    const note = readNote(s.path);
+  for (const summary of allSummaries) {
+    const note = readNote(summary.path);
     if (note) freshness[getFreshness(note.frontmatter)]++;
   }
   if (freshness.stale > 0 || freshness.aging > 0) {
@@ -82,18 +88,12 @@ export async function runStatus() {
     );
   }
 
-  // Average confidence
-  if (allSummaries.length > 0) {
-    const avg =
-      allSummaries.reduce((sum, n) => sum + n.confidence, 0) /
-      allSummaries.length;
-    console.log(`  💪 평균 confidence: ${avg.toFixed(2)}`);
-  }
+  const avg = allSummaries.reduce((sum, note) => sum + note.confidence, 0) / allSummaries.length;
+  console.log(`  💪 평균 confidence: ${avg.toFixed(2)}`);
 
-  // Most recent note
   const dates = allSummaries
-    .map((n) => {
-      const note = fs.readFileSync(n.path, "utf-8");
+    .map((summary) => {
+      const note = fs.readFileSync(summary.path, "utf-8");
       const match = note.match(/created:\s*"?(\d{4}-\d{2}-\d{2})/);
       return match ? match[1] : null;
     })
@@ -110,9 +110,9 @@ export async function runStatus() {
 
 function countMd(dir: string, prefix?: string): number {
   if (!fs.existsSync(dir)) return 0;
-  return fs.readdirSync(dir).filter((f) => {
-    if (!f.endsWith(".md")) return false;
-    if (prefix && !f.startsWith(prefix)) return false;
+  return fs.readdirSync(dir).filter((file) => {
+    if (!file.endsWith(".md")) return false;
+    if (prefix && !file.startsWith(prefix)) return false;
     return true;
   }).length;
 }

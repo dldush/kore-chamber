@@ -199,32 +199,6 @@ export function readProfile(vaultPath: string): string {
   return fs.readFileSync(profilePath, "utf-8");
 }
 
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-export function updateProfileSection(
-  vaultPath: string,
-  section: string,
-  newContent: string
-): void {
-  const profilePath = path.join(vaultPath, "MY-PROFILE.md");
-  if (!fs.existsSync(profilePath)) return;
-
-  let content = fs.readFileSync(profilePath, "utf-8");
-  const sectionRegex = new RegExp(
-    `(## ${escapeRegex(section)}\\n)([\\s\\S]*?)(?=\\n## |$)`
-  );
-
-  if (sectionRegex.test(content)) {
-    content = content.replace(sectionRegex, `$1${newContent}\n`);
-  } else {
-    content = content.trimEnd() + `\n\n## ${section}\n${newContent}\n`;
-  }
-
-  fs.writeFileSync(profilePath, content);
-}
-
 // ─── Knowledge lifecycle ───
 
 export function bumpConfidence(filePath: string): void {
