@@ -17,10 +17,18 @@ Kore Chamber는 `~/.claude/projects/` 아래의 Claude JSONL 세션을 읽고, L
 ## 설치
 
 ```bash
-npx kore-chamber init
+npx kore-chamber
+
+# 또는 전역 설치
+npm install -g kore-chamber
+kore-chamber
 ```
 
-`init`이 수행하는 일:
+`npm install kore-chamber`만 실행하면 로컬 프로젝트 의존성으로만 추가되고, 셸 `PATH`에는 `kore-chamber`가 잡히지 않습니다. CLI로 쓰려면 `npx`, `npm exec`, 또는 전역 설치를 써야 합니다.
+
+처음 대화형 실행에서 `~/.kore-chamber/config.yaml`이 없으면 자동으로 초기 설정이 시작됩니다.
+
+초기 설정이 수행하는 일:
 
 1. `claude` CLI 설치 여부 확인
 2. Claude 인증 확인
@@ -39,6 +47,7 @@ kore-chamber collect --dry-run
 
 kore-chamber profile
 kore-chamber profile edit
+kore-chamber edit
 
 kore-chamber status
 kore-chamber doctor
@@ -51,6 +60,7 @@ kore-chamber mcp
 - `collect --dry-run`: 노트/추적 파일을 쓰지 않고 미리보기만 실행
 - `profile`: `MY-PROFILE.md` 출력
 - `profile edit`: `$EDITOR`로 `MY-PROFILE.md` 열기
+- `edit`: `kore-chamber profile edit`의 축약 명령
 - `mcp`: 원할 때만 MCP 서버를 수동 실행
 
 `kore-chamber explore`는 다음 버전용 예약 명령이며 현재는 플레이스홀더만 제공합니다.

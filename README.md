@@ -17,10 +17,18 @@ Kore Chamber is a standalone CLI that reads Claude JSONL sessions from `~/.claud
 ## Install
 
 ```bash
-npx kore-chamber init
+npx kore-chamber
+
+# or install globally
+npm install -g kore-chamber
+kore-chamber
 ```
 
-`init` does the following:
+`npm install kore-chamber` alone only adds the package to a local project and does not put `kore-chamber` on your shell `PATH`. For CLI usage, use `npx`, `npm exec`, or a global install.
+
+On first interactive run, Kore Chamber automatically starts the setup flow if `~/.kore-chamber/config.yaml` is missing.
+
+Setup does the following:
 
 1. Checks that the `claude` CLI is installed
 2. Verifies Claude authentication
@@ -39,6 +47,7 @@ kore-chamber collect --dry-run
 
 kore-chamber profile
 kore-chamber profile edit
+kore-chamber edit
 
 kore-chamber status
 kore-chamber doctor
@@ -51,6 +60,7 @@ kore-chamber mcp
 - `collect --dry-run`: preview without writing notes or tracker state
 - `profile`: print `MY-PROFILE.md`
 - `profile edit`: open `MY-PROFILE.md` in `$EDITOR`
+- `edit`: shortcut for `kore-chamber profile edit`
 - `mcp`: run the MCP server manually if you want the vault exposed as tools
 
 `kore-chamber explore` is reserved for a later version and currently returns a placeholder message.
