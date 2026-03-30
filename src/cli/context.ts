@@ -17,7 +17,7 @@ export async function runContext(args: string[] = []) {
       runContextSession(args.slice(1));
       return;
     case "prompt":
-      runContextPrompt(args.slice(1));
+      await runContextPrompt(args.slice(1));
       return;
     default:
       printContextHelp();
@@ -65,7 +65,7 @@ function runContextSession(args: string[]) {
   console.log(context);
 }
 
-function runContextPrompt(args: string[]) {
+async function runContextPrompt(args: string[]) {
   runMigrations();
 
   const output = parseOutput(args);
@@ -73,7 +73,7 @@ function runContextPrompt(args: string[]) {
   const cwd = readFlagValue(args, "--cwd") ?? hookInput?.cwd;
   const prompt = readFlagValue(args, "--prompt") ?? hookInput?.prompt ?? "";
   const { vaultPath } = loadConfig();
-  const context = buildPromptContext(vaultPath, { cwd, prompt });
+  const context = await buildPromptContext(vaultPath, { cwd, prompt });
 
   if (output === "hook-json") {
     if (!context) return;

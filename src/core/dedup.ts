@@ -1,4 +1,10 @@
 import type { NoteSummary } from "./vault.js";
+import {
+  embed,
+  cosineSimilarity,
+  getOrComputeEmbedding,
+  EMBEDDING_THRESHOLDS,
+} from "./embeddings.js";
 
 // ─── Types ───
 
@@ -11,39 +17,33 @@ export interface DedupResult {
   similarity: number;
 }
 
+// Kept for config.yaml compatibility
 export interface DedupThresholds {
   clearNew: number;
   clearDuplicate: number;
 }
 
-const DEFAULT_THRESHOLDS: DedupThresholds = {
-  clearNew: 0.30,
-  clearDuplicate: 0.70,
-};
+// ─── Dedup (embedding-based) ───
 
-/**
- * 1st pass: code-based Jaccard similarity check.
- * Returns one of three zones:
- *   - "new":        below clearNew → create note
- *   - "borderline": between clearNew and clearDuplicate → AI judgment
- *   - "duplicate":  above clearDuplicate → skip
- */
-export function checkDuplicate(
+export async function checkDuplicate(
+  newSlug: string,
   newSummary: string,
   existingSummaries: NoteSummary[],
-  thresholds: DedupThresholds = DEFAULT_THRESHOLDS
-): DedupResult {
-  const newTokens = tokenize(newSummary);
+  embeddingCache: Map<string, number[]>
+): Promise<DedupResult> {
+  const newVector = await getOrComputeEmbedding(newSlug, newSummary, embeddingCache);
 
   let maxSimilarity = 0;
   let mostSimilar: NoteSummary | undefined;
 
   for (const existing of existingSummaries) {
     if (!existing.summary) continue;
-
-    const existingTokens = tokenize(existing.summary);
-    const sim = jaccardSimilarity(newTokens, existingTokens);
-
+    const existingVector = await getOrComputeEmbedding(
+      existing.slug,
+      existing.summary,
+      embeddingCache
+    );
+    const sim = cosineSimilarity(newVector, existingVector);
     if (sim > maxSimilarity) {
       maxSimilarity = sim;
       mostSimilar = existing;
@@ -51,9 +51,9 @@ export function checkDuplicate(
   }
 
   let verdict: DedupVerdict;
-  if (maxSimilarity >= thresholds.clearDuplicate) {
+  if (maxSimilarity >= EMBEDDING_THRESHOLDS.clearDuplicate) {
     verdict = "duplicate";
-  } else if (maxSimilarity >= thresholds.clearNew) {
+  } else if (maxSimilarity >= EMBEDDING_THRESHOLDS.clearNew) {
     verdict = "borderline";
   } else {
     verdict = "new";
@@ -67,27 +67,19 @@ export function checkDuplicate(
   };
 }
 
-/**
- * Batch dedup: within a set of new items, find duplicates.
- * Returns indices to keep.
- */
-export function batchDedup(
-  summaries: string[],
-  thresholds: DedupThresholds = DEFAULT_THRESHOLDS
-): number[] {
+// Dedup within a batch of new items (no cache needed — not yet in vault)
+export async function batchDedup(summaries: string[]): Promise<number[]> {
+  const vectors = await Promise.all(summaries.map(embed));
   const keep: number[] = [];
-  const tokenized = summaries.map(tokenize);
 
   for (let i = 0; i < summaries.length; i++) {
     let isDup = false;
-
     for (const j of keep) {
-      if (jaccardSimilarity(tokenized[i], tokenized[j]) >= thresholds.clearDuplicate) {
+      if (cosineSimilarity(vectors[i], vectors[j]) >= EMBEDDING_THRESHOLDS.clearDuplicate) {
         isDup = true;
         break;
       }
     }
-
     if (!isDup) keep.push(i);
   }
 
@@ -123,7 +115,7 @@ function stripKoreanParticles(word: string): string {
   return word;
 }
 
-// ─── Tokenizer ───
+// ─── Tokenizer (used by linker, moc, search) ───
 
 export function tokenize(text: string): Set<string> {
   const tokens = new Set<string>();
@@ -137,16 +129,11 @@ export function tokenize(text: string): Set<string> {
     const hasCJK = CJK_RANGE.test(word);
 
     if (hasCJK) {
-      // CJK: allow single-char tokens (값, 형, 식 etc.)
       tokens.add(word);
 
-      // Strip Korean particles: 리액트의→리액트, 관리를→관리
       const stripped = stripKoreanParticles(word);
-      if (stripped !== word) {
-        tokens.add(stripped);
-      }
+      if (stripped !== word) tokens.add(stripped);
 
-      // Character bigrams for compound word matching: 상태관리→{상태,태관,관리}
       const bigramTarget = stripped.length >= 3 ? stripped : word;
       if (bigramTarget.length >= 3) {
         for (let i = 0; i < bigramTarget.length - 1; i++) {
@@ -154,15 +141,12 @@ export function tokenize(text: string): Set<string> {
         }
       }
     } else {
-      // Non-CJK: filter single chars (a, I, etc.)
       if (word.length > 1) tokens.add(word);
     }
   }
 
   return tokens;
 }
-
-// ─── Similarity ───
 
 export function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
   if (a.size === 0 && b.size === 0) return 0;

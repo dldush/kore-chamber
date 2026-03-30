@@ -1,5 +1,11 @@
 import * as path from "node:path";
 import { getAllSummaries, readNote, readProfile, type NoteType } from "./vault.js";
+import {
+  embed,
+  cosineSimilarity,
+  getOrComputeEmbedding,
+  loadEmbeddingCache,
+} from "./embeddings.js";
 
 export interface SessionContextInput {
   cwd?: string;
@@ -33,6 +39,8 @@ const NOTE_TYPE_LABELS: Record<string, string> = {
   pattern: "패턴",
 };
 
+// ─── Session context (freshness-based, sync) ───
+
 export function buildSessionContext(
   vaultPath: string,
   input: SessionContextInput
@@ -65,45 +73,49 @@ export function buildSessionContext(
     : `${context.slice(0, 1597).trimEnd()}...`;
 }
 
-export function buildPromptContext(
+// ─── Prompt context (embedding-based, async) ───
+
+const MIN_PROMPT_SIMILARITY = 0.40;
+
+export async function buildPromptContext(
   vaultPath: string,
   input: PromptContextInput
-): string {
-  const promptTokens = tokenizeText(input.prompt);
-  if (promptTokens.length === 0) return "";
+): Promise<string> {
+  const prompt = input.prompt.trim();
+  if (!prompt) return "";
 
   const summaries = getAllSummaries(vaultPath);
   if (summaries.length === 0) return "";
 
-  const cwdTokens = tokenizeProject(input.cwd);
-  const scored = summaries
-    .map((summary) => {
-      const fields = [summary.slug, summary.summary, ...summary.tags];
-      const promptScore = scoreTokens(promptTokens, fields) * 12;
-      if (promptScore === 0) return null;
+  const cache = loadEmbeddingCache();
+  const promptVector = await embed(prompt);
 
-      const cwdScore = scoreTokens(cwdTokens, fields) * 6;
-      const confidenceScore = Math.round(summary.confidence * 4);
-      const typeScore = scoreType(summary.type);
+  const scored: ScoredNote[] = [];
 
-      return {
-        slug: summary.slug,
-        summary: singleLine(summary.summary),
-        type: summary.type,
-        score: promptScore + cwdScore + confidenceScore + typeScore,
-      };
-    })
-    .filter((note): note is ScoredNote => note !== null)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
+  for (const summary of summaries) {
+    const noteVector = await getOrComputeEmbedding(summary.slug, summary.summary, cache);
+    const sim = cosineSimilarity(promptVector, noteVector);
+    if (sim < MIN_PROMPT_SIMILARITY) continue;
 
-  if (scored.length === 0) return "";
+    const confidenceScore = Math.round(summary.confidence * 4);
+    const typeScore = scoreType(summary.type);
+
+    scored.push({
+      slug: summary.slug,
+      summary: singleLine(summary.summary),
+      type: summary.type,
+      score: sim * 10 + confidenceScore + typeScore,
+    });
+  }
+
+  const top3 = scored.sort((a, b) => b.score - a.score).slice(0, 3);
+  if (top3.length === 0) return "";
 
   const lines = [
     "[Kore Chamber Relevant Memory]",
     "",
     "Relevant notes",
-    ...scored.map((note) => {
+    ...top3.map((note) => {
       const typeLabel = NOTE_TYPE_LABELS[note.type] ?? note.type;
       return `- [${typeLabel}] ${note.slug}: ${note.summary}`;
     }),
@@ -112,19 +124,7 @@ export function buildPromptContext(
   return lines.join("\n");
 }
 
-function summarizeProfile(profile: string): string[] {
-  if (!profile.trim()) return [];
-
-  const lines: string[] = [];
-
-  for (const section of PROFILE_SECTIONS) {
-    const value = extractSection(profile, section.heading);
-    if (!value || value === "(미입력)" || value === "(자유롭게 추가하세요)") continue;
-    lines.push(`${section.label}: ${singleLine(value)}`);
-  }
-
-  return lines;
-}
+// ─── Session note picking (freshness + project path scoring) ───
 
 function pickRelevantSessionNotes(
   vaultPath: string,
@@ -162,56 +162,56 @@ function pickRelevantSessionNotes(
     .slice(0, 4);
 }
 
+// ─── Helpers ───
+
+function summarizeProfile(profile: string): string[] {
+  if (!profile.trim()) return [];
+
+  const lines: string[] = [];
+  for (const section of PROFILE_SECTIONS) {
+    const value = extractSection(profile, section.heading);
+    if (!value || value === "(미입력)" || value === "(자유롭게 추가하세요)") continue;
+    lines.push(`${section.label}: ${singleLine(value)}`);
+  }
+  return lines;
+}
+
 function tokenizeProject(cwd?: string): string[] {
   if (!cwd) return [];
-
   const tokens = new Set<string>();
   for (const part of cwd.split(path.sep)) {
     for (const token of tokenizeText(part)) {
       if (token.length >= 3) tokens.add(token);
     }
   }
-
   return [...tokens];
 }
 
 function tokenizeText(input: string): string[] {
   const tokens = new Set<string>();
-
   for (const token of input.toLowerCase().split(/[^a-z0-9가-힣]+/)) {
-    if (token.length >= 2) {
-      tokens.add(token);
-    }
+    if (token.length >= 2) tokens.add(token);
   }
-
   return [...tokens];
 }
 
 function scoreTokens(tokens: string[], fields: string[]): number {
   if (tokens.length === 0) return 0;
-
   const haystack = fields.join(" ").toLowerCase();
   let score = 0;
-
   for (const token of tokens) {
     if (haystack.includes(token)) score += 1;
   }
-
   return score;
 }
 
 function scoreType(type: string): number {
   switch (type) {
-    case "decision":
-      return 6;
-    case "troubleshooting":
-      return 5;
-    case "pattern":
-      return 4;
-    case "concept":
-      return 3;
-    default:
-      return 0;
+    case "decision": return 6;
+    case "troubleshooting": return 5;
+    case "pattern": return 4;
+    case "concept": return 3;
+    default: return 0;
   }
 }
 
@@ -219,7 +219,6 @@ function scoreDate(dateText: string): number {
   if (!dateText) return 0;
   const timestamp = new Date(dateText).getTime();
   if (Number.isNaN(timestamp)) return 0;
-
   const ageDays = Math.floor((Date.now() - timestamp) / (1000 * 60 * 60 * 24));
   if (ageDays <= 7) return 8;
   if (ageDays <= 30) return 6;

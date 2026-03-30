@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.85",
+    "@huggingface/transformers": "^3.0.0",
     "@modelcontextprotocol/sdk": "^1.28.0",
     "yaml": "^2.7.0"
   },

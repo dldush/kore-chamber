@@ -16,7 +16,8 @@ import {
   writeNote,
 } from "../core/vault.js";
 import { addBatchLinks, addLinks, searchRelated } from "../core/linker.js";
-import { batchDedup, checkDuplicate, type DedupThresholds } from "../core/dedup.js";
+import { batchDedup, checkDuplicate } from "../core/dedup.js";
+import { appendEmbeddingToCache, embed, loadEmbeddingCache } from "../core/embeddings.js";
 import { addToMOC, findBestMOC } from "../core/moc.js";
 import { extractKnowledge, judgeBorderline, mergeNotes, type KnowledgeItem } from "../llm/extract.js";
 import { generateSlug } from "../core/slug.js";
@@ -255,7 +256,7 @@ async function collectSession(
   options: CollectSessionOptions
 ): Promise<CollectOutput> {
   const config = loadConfig();
-  const { vaultPath, dedup: dedupThresholds } = config;
+  const { vaultPath } = config;
 
   if (options.showBanner !== false) {
     options.log(`\n🧠 Kore Chamber — collect${options.dryRun ? " (dry-run)" : ""}\n`);
@@ -305,14 +306,16 @@ async function collectSession(
   baseOutput.knowledgeItems = extraction.knowledge_items.length;
   options.log(`   ${extraction.knowledge_items.length}개 항목 추출\n`);
 
-  const keepIndices = batchDedup(
-    extraction.knowledge_items.map((item) => item.summary),
-    dedupThresholds
+  options.log("🔍 임베딩 dedup 중...");
+  const keepIndices = await batchDedup(
+    extraction.knowledge_items.map((item) => item.summary)
   );
   const uniqueItems = keepIndices.map((index) => extraction.knowledge_items[index]);
 
+  const embeddingCache = loadEmbeddingCache();
+
   options.log("📋 저장 계획 수립...");
-  const plan = await buildPlan(uniqueItems, existingSummaries, vaultPath, dedupThresholds);
+  const plan = await buildPlan(uniqueItems, existingSummaries, vaultPath, embeddingCache);
   printPlan(plan, options.log);
 
   if (options.dryRun) {
@@ -321,7 +324,9 @@ async function collectSession(
   }
 
   options.log("\n✏️  저장 중...\n");
-  const { results: execResults, batchLinksAdded } = await executePlan(plan, vaultPath, options.log);
+  const { results: execResults, batchLinksAdded } = await executePlan(
+    plan, vaultPath, options.log, embeddingCache
+  );
   const output = buildOutput(baseOutput, plan, execResults, batchLinksAdded);
   maybeMarkProcessed(false, target, output.stored.length);
 
@@ -333,16 +338,17 @@ async function buildPlan(
   items: KnowledgeItem[],
   existingSummaries: ReturnType<typeof getAllSummaries>,
   vaultPath: string,
-  thresholds: DedupThresholds
+  embeddingCache: Map<string, number[]>
 ): Promise<CollectPlan> {
   const plan: CollectPlan = { items: [] };
 
   for (const item of items) {
-    const dedup = checkDuplicate(item.summary, existingSummaries, thresholds);
     const slug = generateSlug(item.title);
     const folder = getTypeFolder(item.type);
     const filePath = path.join(vaultPath, folder, `${slug}.md`);
     const mocPath = findBestMOC(vaultPath, item.tags);
+
+    const dedup = await checkDuplicate(slug, item.summary, existingSummaries, embeddingCache);
 
     let action: "new" | "merge" | "skip";
     let mergeTarget: string | undefined;
@@ -422,7 +428,8 @@ function printPlan(
 async function executePlan(
   plan: CollectPlan,
   vaultPath: string,
-  log: (...args: unknown[]) => void
+  log: (...args: unknown[]) => void,
+  embeddingCache: Map<string, number[]>
 ): Promise<{ results: ExecResult[]; batchLinksAdded: number }> {
   const storedNotes: PersistedNoteRef[] = [];
   const allSummaries = getAllSummaries(vaultPath);
@@ -446,6 +453,11 @@ async function executePlan(
       const body = `# ${planned.slug}\n\n${planned.item.content}\n\n## 관련 노트\n`;
       writeNote(planned.filePath, frontmatter, body);
       log(`  📝 ${planned.folder}/${planned.slug}.md`);
+
+      // Cache embedding for newly created note
+      const vector = await embed(planned.item.summary);
+      appendEmbeddingToCache(persisted.slug, vector);
+      embeddingCache.set(persisted.slug, vector);
     } else if (planned.action === "merge" && planned.mergeTarget) {
       const existing = readNote(persisted.path);
       if (existing) {
@@ -459,6 +471,11 @@ async function executePlan(
         writeNote(persisted.path, existing.frontmatter, merged.merged_body);
         bumpConfidence(persisted.path);
         log(`  🔄 ${path.basename(persisted.path)} (병합, confidence +0.1)`);
+
+        // Update cache with merged summary
+        const vector = await embed(merged.updated_summary);
+        appendEmbeddingToCache(persisted.slug, vector);
+        embeddingCache.set(persisted.slug, vector);
       }
     }
 
@@ -590,11 +607,7 @@ function getPersistedNoteRef(
 
 function dedupePersistedNotes(notes: PersistedNoteRef[]): PersistedNoteRef[] {
   const unique = new Map<string, PersistedNoteRef>();
-
-  for (const note of notes) {
-    unique.set(note.path, note);
-  }
-
+  for (const note of notes) unique.set(note.path, note);
   return [...unique.values()];
 }
 
