@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { loadConfig } from "../core/config.js";
-import { getAllSummaries, readNote, readProfile, type NoteSummary } from "../core/vault.js";
+import { getAllSummaries, getFreshness, readNote, readProfile, type Freshness, type NoteType, type NoteSummary } from "../core/vault.js";
 import { countMOCLinks, getMOCNotes } from "../core/moc.js";
 import { ensureAuth, queryLLM } from "../llm/claude.js";
 import { runMigrations } from "../core/migrate.js";
@@ -15,7 +15,8 @@ interface VaultSnapshot {
   profile: string;
   goals: string;
   summaries: NoteSummary[];
-  lowConfidenceNotes: LowConfidenceNote[];
+  tagDistribution: TagFreq[];
+  shakeyGroundCandidates: ShakeyCandidate[];
 }
 
 interface FolderStat {
@@ -30,11 +31,19 @@ interface MOCStat {
   noteNames: string[];
 }
 
-interface LowConfidenceNote {
+interface TagFreq {
+  tag: string;
+  count: number;
+}
+
+interface ShakeyCandidate {
   slug: string;
   summary: string;
-  type: string;
+  type: NoteType;
   confidence: number;
+  freshness: Freshness;
+  isolated: boolean;
+  signal: "never_reinforced_and_stale" | "never_reinforced_and_isolated" | "reinforced_but_stale";
 }
 
 interface GapItem {
@@ -70,7 +79,7 @@ const EXPLORE_SCHEMA = {
           },
           next_question: {
             type: "string",
-            description: "One concrete question the user should be able to answer once this gap is filled. Make it specific and testable.",
+            description: "One concrete, testable question. If the user can answer it fluently, the gap is closed.",
           },
         },
         required: ["topic", "reason", "priority", "next_question"],
@@ -79,11 +88,11 @@ const EXPLORE_SCHEMA = {
     shaky_ground: {
       type: "array",
       items: { type: "string" },
-      description: "Slugs from the low-confidence note list that appear to be misunderstood or only superficially covered. Max 3.",
+      description: "Slugs from the shaky-ground candidate list whose summary suggests the user only has surface-level understanding. Max 3. Only pick ones where deeper knowledge is actually needed for their goals.",
     },
     observation: {
       type: "string",
-      description: "One paragraph: overall assessment of learning trajectory and vault coverage relative to stated goals.",
+      description: "One paragraph: overall assessment of learning trajectory, tag coverage relative to stated goals, and what to prioritize next.",
     },
   },
   required: ["gaps", "shaky_ground", "observation"],
@@ -122,23 +131,81 @@ function scanVault(vaultPath: string): VaultSnapshot {
   }
 
   const summaries = getAllSummaries(vaultPath);
-  const totalNotes = summaries.length;
+  const tagDistribution = buildTagDistribution(summaries);
+  const shakeyGroundCandidates = findShakeyGroundCandidates(summaries, vaultPath);
+  const profile = readProfile(vaultPath);
+  const goals = extractGoals(profile);
 
-  const lowConfidenceNotes: LowConfidenceNote[] = summaries
-    .filter((s) => s.confidence < 0.5 && s.summary.length > 0)
-    .sort((a, b) => a.confidence - b.confidence)
-    .slice(0, 10)
-    .map((s) => ({
+  return {
+    totalNotes: summaries.length,
+    folders,
+    mocs,
+    profile,
+    goals,
+    summaries,
+    tagDistribution,
+    shakeyGroundCandidates,
+  };
+}
+
+function buildTagDistribution(summaries: NoteSummary[]): TagFreq[] {
+  const freq = new Map<string, number>();
+  for (const s of summaries) {
+    for (const tag of s.tags) {
+      freq.set(tag, (freq.get(tag) ?? 0) + 1);
+    }
+  }
+  return [...freq.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
+function findShakeyGroundCandidates(summaries: NoteSummary[], vaultPath: string): ShakeyCandidate[] {
+  const candidates: ShakeyCandidate[] = [];
+
+  for (const s of summaries) {
+    if (!s.summary) continue;
+
+    const note = readNote(s.path);
+    if (!note) continue;
+
+    const freshness = getFreshness(note.frontmatter);
+    const isolated = s.links.length === 0;
+    const neverReinforced = s.confidence === 0.5; // 한 번도 merge(재등장)된 적 없음
+
+    let signal: ShakeyCandidate["signal"] | null = null;
+
+    if (neverReinforced && freshness === "stale") {
+      signal = "never_reinforced_and_stale";
+    } else if (neverReinforced && isolated) {
+      signal = "never_reinforced_and_isolated";
+    } else if (!neverReinforced && freshness === "stale") {
+      signal = "reinforced_but_stale";
+    }
+
+    if (!signal) continue;
+
+    candidates.push({
       slug: s.slug,
       summary: s.summary,
       type: s.type,
       confidence: s.confidence,
-    }));
+      freshness,
+      isolated,
+      signal,
+    });
+  }
 
-  const profile = readProfile(vaultPath);
-  const goals = extractGoals(profile);
+  // 위험도 높은 순 정렬: never_reinforced_and_stale > never_reinforced_and_isolated > reinforced_but_stale
+  const signalOrder: Record<ShakeyCandidate["signal"], number> = {
+    never_reinforced_and_stale: 0,
+    never_reinforced_and_isolated: 1,
+    reinforced_but_stale: 2,
+  };
 
-  return { totalNotes, folders, mocs, profile, goals, summaries, lowConfidenceNotes };
+  return candidates
+    .sort((a, b) => signalOrder[a.signal] - signalOrder[b.signal])
+    .slice(0, 12);
 }
 
 function extractGoals(profile: string): string {
@@ -165,20 +232,31 @@ function buildSnapshotText(snapshot: VaultSnapshot): string {
   }
   lines.push("");
 
+  if (snapshot.tagDistribution.length > 0) {
+    const top = snapshot.tagDistribution.slice(0, 20);
+    lines.push("## Tag Distribution (what topics are covered, and how much)");
+    lines.push(top.map((t) => `${t.tag}(${t.count})`).join(", "));
+    lines.push("");
+  }
+
   if (snapshot.summaries.length > 0) {
-    lines.push("## Notes (slug | type | confidence | summary | tags)");
+    lines.push("## Notes (slug | type | confidence | summary)");
     for (const s of snapshot.summaries) {
-      const tags = s.tags.length > 0 ? s.tags.join(", ") : "-";
-      lines.push(`- ${s.slug} | ${s.type} | ${s.confidence.toFixed(1)} | ${s.summary} | [${tags}]`);
+      lines.push(`- ${s.slug} | ${s.type} | ${s.confidence.toFixed(1)} | ${s.summary}`);
     }
     lines.push("");
   }
 
-  if (snapshot.lowConfidenceNotes.length > 0) {
-    lines.push("## Low-Confidence Notes (possible shaky ground)");
-    lines.push("These notes have low confidence scores — the user may have only surface-level understanding:");
-    for (const n of snapshot.lowConfidenceNotes) {
-      lines.push(`- ${n.slug} (${n.confidence.toFixed(1)}): ${n.summary}`);
+  if (snapshot.shakeyGroundCandidates.length > 0) {
+    lines.push("## Shaky Ground Candidates");
+    lines.push("These notes have structural warning signals — they may represent weak spots:");
+    for (const c of snapshot.shakeyGroundCandidates) {
+      const signalLabel = {
+        never_reinforced_and_stale: "seen once + stale",
+        never_reinforced_and_isolated: "seen once + no connections",
+        reinforced_but_stale: "was reinforced, but now stale",
+      }[c.signal];
+      lines.push(`- ${c.slug} [${signalLabel}]: ${c.summary}`);
     }
     lines.push("");
   }
@@ -202,7 +280,7 @@ function buildExplorePrompt(snapshotText: string, profile: string, goals: string
     : "";
 
   const goalsSection = goals
-    ? `## User Goals (prioritize gaps that block these)\n${goals}\n`
+    ? `## User Goals (these drive everything — gaps that block these are high priority)\n${goals}\n`
     : "";
 
   return `You are a learning gap analyst. Your job is to find what the user doesn't know they don't know.
@@ -214,17 +292,21 @@ ${goalsSection}
 ## Current Vault State
 ${snapshotText}
 ${focusLine}
-## Instructions
-- Cross-reference the user's stated goals against what's in the vault
-- Identify 3-5 specific, actionable gaps — not vague categories
-- Each gap must explain WHY it blocks the user's specific goals
-- For next_question: write a concrete, testable question. If the user can answer it, the gap is closed. Bad: "React 이해하기". Good: "React에서 useEffect의 cleanup 함수가 실행되는 시점은 언제이고, 왜 필요한가?"
-- For shaky_ground: from the low-confidence note list, pick up to 3 that seem most likely to be misunderstood based on the summary. Return their slugs.
-- If the vault has < 5 notes, suggest 3 foundational starter topics instead
-- Write in the same language as the user profile (Korean if profile is Korean)
-- Be specific. Vague gaps like "React 심화" are not acceptable.
+## Your task
 
-Respond as JSON.`;
+**Gaps:** Cross-reference the tag distribution and note list against the user's stated goals.
+- What topics appear in the goals but are absent or thin in the vault?
+- What prerequisite knowledge must exist before the user's stated goals become achievable?
+- What areas does the tag distribution reveal they've been avoiding?
+- Identify 3-5 specific, actionable gaps. Vague gaps like "React 심화" are not acceptable.
+- Each gap must explain exactly WHY it blocks the user's specific goals.
+- next_question must be a concrete, testable question. The user should be able to answer it out loud. If they can, the gap is closed.
+
+**Shaky ground:** From the shaky-ground candidates, pick up to 3 whose summary suggests the user needs deeper understanding for their goals. Return their slugs. Do not include ones that are irrelevant to the goals.
+
+**Observation:** Summarize the learning trajectory. What's well-covered? What's the biggest blind spot? What should they do next?
+
+Write in the same language as the user profile (Korean if profile is Korean). Respond as JSON.`;
 }
 
 // ─── Output ───
@@ -234,6 +316,10 @@ function printResult(snapshot: VaultSnapshot, result: ExploreResult, log: (...ar
   for (const folder of snapshot.folders) {
     if (folder.count === 0) continue;
     log(`  ${folder.label}: ${folder.count}개`);
+  }
+  if (snapshot.tagDistribution.length > 0) {
+    const top5 = snapshot.tagDistribution.slice(0, 5).map((t) => `${t.tag}(${t.count})`).join(", ");
+    log(`  주요 태그: ${top5}`);
   }
   if (snapshot.mocs.length > 0) {
     const mocSummary = snapshot.mocs
@@ -253,11 +339,16 @@ function printResult(snapshot: VaultSnapshot, result: ExploreResult, log: (...ar
 
   if (result.shaky_ground.length > 0) {
     log("\n━━━ 흔들리는 땅 ━━━");
-    log("  알고 있다고 생각하지만 실제로는 표면적 이해에 그칠 수 있는 개념:");
+    log("  한 번만 봤거나 오래 활용하지 않아 실제 이해가 불확실할 수 있는 개념:");
     for (const slug of result.shaky_ground) {
-      const note = snapshot.summaries.find((s) => s.slug === slug);
-      const summary = note ? ` — ${note.summary}` : "";
-      log(`  • ${slug}${summary}`);
+      const candidate = snapshot.shakeyGroundCandidates.find((c) => c.slug === slug);
+      const signalLabel = candidate ? {
+        never_reinforced_and_stale: "1회 수집 + 방치",
+        never_reinforced_and_isolated: "1회 수집 + 연결 없음",
+        reinforced_but_stale: "강화됐지만 방치",
+      }[candidate.signal] : "";
+      const summary = candidate ? ` — ${candidate.summary}` : "";
+      log(`  • ${slug}${signalLabel ? ` [${signalLabel}]` : ""}${summary}`);
     }
   }
 
@@ -287,7 +378,12 @@ export async function runExplore(args: string[] = []) {
     return;
   }
 
-  log(`   ${snapshot.totalNotes}개 노트, ${snapshot.mocs.length}개 MOC, low-confidence ${snapshot.lowConfidenceNotes.length}개`);
+  if (!snapshot.goals) {
+    log("\n  MY-PROFILE.md에 목표가 없습니다.");
+    log("  `kore-chamber profile`로 목표를 먼저 작성하면 더 정확한 갭 분석이 가능합니다.\n");
+  }
+
+  log(`   ${snapshot.totalNotes}개 노트, ${snapshot.tagDistribution.length}개 태그, shaky ${snapshot.shakeyGroundCandidates.length}개`);
   if (focusTopic) log(`   포커스: ${focusTopic}`);
 
   ensureAuth();
@@ -300,7 +396,12 @@ export async function runExplore(args: string[] = []) {
   if (isJson) {
     console.log(JSON.stringify({
       ok: true,
-      snapshot: { totalNotes: snapshot.totalNotes, mocs: snapshot.mocs, lowConfidenceCount: snapshot.lowConfidenceNotes.length },
+      snapshot: {
+        totalNotes: snapshot.totalNotes,
+        tagCount: snapshot.tagDistribution.length,
+        shakeyCount: snapshot.shakeyGroundCandidates.length,
+        mocs: snapshot.mocs,
+      },
       ...result,
     }, null, 2));
     return;
