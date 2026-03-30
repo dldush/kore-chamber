@@ -375,9 +375,20 @@ function setupClaudeAccess(vaultPath: string, lang: Lang): void {
   if (!dirs.includes(vaultPath)) {
     dirs.push(vaultPath);
     settings.additionalDirectories = dirs;
-    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
-    console.log(t(msg.settingsAdded, lang));
   }
+
+  // Register MCP server
+  const mcpServers = (settings.mcpServers as Record<string, unknown>) || {};
+  if (!mcpServers["kore-chamber"]) {
+    mcpServers["kore-chamber"] = {
+      command: "npx",
+      args: ["kore-chamber", "mcp"],
+    };
+    settings.mcpServers = mcpServers;
+  }
+
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+  console.log(t(msg.settingsAdded, lang));
 }
 
 // ─── Step 9: Global CLAUDE.md vault rules ───

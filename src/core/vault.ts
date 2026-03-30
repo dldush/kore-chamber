@@ -25,6 +25,7 @@ export interface NoteSummary {
   tags: string[];
   type: string;
   links: string[];
+  confidence: number;
 }
 
 // ─── Knowledge folders ───
@@ -149,6 +150,7 @@ export function getAllSummaries(vaultPath: string): NoteSummary[] {
       tags: note.frontmatter.tags,
       type: note.frontmatter.type,
       links,
+      confidence: (note.frontmatter.confidence as number) ?? 0.5,
     });
   }
 
@@ -221,4 +223,37 @@ export function updateProfileSection(
   }
 
   fs.writeFileSync(profilePath, content);
+}
+
+// ─── Knowledge lifecycle ───
+
+export function bumpConfidence(filePath: string): void {
+  const note = readNote(filePath);
+  if (!note) return;
+
+  const current = (note.frontmatter.confidence as number) ?? 0.5;
+  note.frontmatter.confidence = Math.min(1.0, +(current + 0.1).toFixed(1));
+  writeNote(filePath, note.frontmatter, note.body);
+}
+
+export function touchLastReferenced(filePath: string): void {
+  const note = readNote(filePath);
+  if (!note) return;
+
+  note.frontmatter.last_referenced = new Date().toISOString().split("T")[0];
+  writeNote(filePath, note.frontmatter, note.body);
+}
+
+export type Freshness = "current" | "aging" | "stale";
+
+export function getFreshness(frontmatter: NoteFrontmatter): Freshness {
+  const refDate = (frontmatter.last_referenced as string) || frontmatter.created;
+  if (!refDate) return "stale";
+
+  const days = Math.floor(
+    (Date.now() - new Date(refDate).getTime()) / (1000 * 60 * 60 * 24)
+  );
+  if (days <= 30) return "current";
+  if (days <= 90) return "aging";
+  return "stale";
 }

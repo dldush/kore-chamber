@@ -125,7 +125,7 @@ function stripKoreanParticles(word: string): string {
 
 // ─── Tokenizer ───
 
-function tokenize(text: string): Set<string> {
+export function tokenize(text: string): Set<string> {
   const tokens = new Set<string>();
 
   const words = text
@@ -164,7 +164,7 @@ function tokenize(text: string): Set<string> {
 
 // ─── Similarity ───
 
-function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+export function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
   if (a.size === 0 && b.size === 0) return 0;
 
   let intersection = 0;

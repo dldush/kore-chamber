@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { loadConfig } from "../core/config.js";
-import { listNotes, getAllSummaries, extractLinks } from "../core/vault.js";
+import { listNotes, getAllSummaries, extractLinks, readNote, getFreshness } from "../core/vault.js";
 import { checkPendingMigrations } from "../core/migrate.js";
 
 export async function runStatus() {
@@ -68,6 +68,26 @@ export async function runStatus() {
   }
   if (brokenCount > 0) {
     console.log(`  ⚠️  깨진 링크: ${brokenCount}개`);
+  }
+
+  // Freshness distribution
+  const freshness = { current: 0, aging: 0, stale: 0 };
+  for (const s of allSummaries) {
+    const note = readNote(s.path);
+    if (note) freshness[getFreshness(note.frontmatter)]++;
+  }
+  if (freshness.stale > 0 || freshness.aging > 0) {
+    console.log(
+      `  🕐 신선도: current ${freshness.current} / aging ${freshness.aging} / stale ${freshness.stale}`
+    );
+  }
+
+  // Average confidence
+  if (allSummaries.length > 0) {
+    const avg =
+      allSummaries.reduce((sum, n) => sum + n.confidence, 0) /
+      allSummaries.length;
+    console.log(`  💪 평균 confidence: ${avg.toFixed(2)}`);
   }
 
   // Most recent note

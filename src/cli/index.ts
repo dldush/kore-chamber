@@ -19,6 +19,9 @@ switch (command) {
   case "status":
     import("./status.js").then((m) => m.runStatus());
     break;
+  case "mcp":
+    import("../mcp/server.js");
+    break;
   default:
     console.log("Usage: kore-chamber <command>");
     console.log("");
@@ -28,6 +31,7 @@ switch (command) {
     console.log("  collect [options]   대화에서 지식 수확 (TS 코어 엔진)");
     console.log("  doctor              설치 상태 진단");
     console.log("  status              볼트 통계");
+    console.log("  mcp                 MCP 서버 실행 (Claude Code 연동)");
     console.log("");
     console.log("Collect options:");
     console.log("  --dry-run           실제 저장 없이 계획만 표시");

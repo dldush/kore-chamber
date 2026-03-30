@@ -8,6 +8,7 @@ import {
   writeNote,
   getCategoryFolder,
   updateProfileSection,
+  bumpConfidence,
   type NoteFrontmatter,
 } from "../core/vault.js";
 import { checkDuplicate, batchDedup, type DedupThresholds } from "../core/dedup.js";
@@ -373,6 +374,7 @@ async function executePlan(
         tags: p.item.tags,
         type: p.item.category,
         summary: p.item.summary,
+        confidence: 0.5,
       };
       const body = `# ${p.slug}\n\n${p.item.content}\n\n## 관련 노트\n`;
       writeNote(p.filePath, frontmatter, body);
@@ -386,7 +388,8 @@ async function executePlan(
         );
         existing.frontmatter.summary = merged.updated_summary;
         writeNote(p.mergeTarget, existing.frontmatter, merged.merged_body);
-        log(`  🔄 ${path.basename(p.mergeTarget)} (병합)`);
+        bumpConfidence(p.mergeTarget);
+        log(`  🔄 ${path.basename(p.mergeTarget)} (병합, confidence +0.1)`);
       }
     }
 

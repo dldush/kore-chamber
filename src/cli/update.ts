@@ -82,6 +82,30 @@ function installClaudeFiles(): InstallResult {
   return result;
 }
 
+function ensureMCPRegistered(): boolean {
+  const settingsPath = path.join(CLAUDE_DIR, "settings.json");
+  let settings: Record<string, unknown> = {};
+
+  if (fs.existsSync(settingsPath)) {
+    try {
+      settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+    } catch {
+      return false;
+    }
+  }
+
+  const mcpServers = (settings.mcpServers as Record<string, unknown>) || {};
+  if (mcpServers["kore-chamber"]) return true;
+
+  mcpServers["kore-chamber"] = {
+    command: "npx",
+    args: ["kore-chamber", "mcp"],
+  };
+  settings.mcpServers = mcpServers;
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+  return true;
+}
+
 function getVersion(): string {
   const pkgPath = path.join(import.meta.dirname, "../../package.json");
   if (fs.existsSync(pkgPath)) {
@@ -112,6 +136,13 @@ export async function runUpdate() {
   if (result.removed.length > 0) {
     console.log("\n🗑️  Removed (migrated to skills):");
     for (const f of result.removed) console.log(`  ❌ ${f}`);
+  }
+
+  // MCP server registration
+  const mcpRegistered = ensureMCPRegistered();
+  if (mcpRegistered) {
+    console.log("\n🔌 MCP 서버:");
+    console.log("  ✅ kore-chamber MCP 서버 등록됨");
   }
 
   // Config migrations
