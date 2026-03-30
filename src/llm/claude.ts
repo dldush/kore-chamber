@@ -135,9 +135,12 @@ function queryViaCLI<T>(prompt: string, jsonSchema: Record<string, unknown>): T 
   const tmpFile = path.join(os.tmpdir(), `kc-prompt-${Date.now()}.txt`);
   fs.writeFileSync(tmpFile, prompt);
 
+  const schemaFile = path.join(os.tmpdir(), `kc-schema-${Date.now()}.json`);
+  fs.writeFileSync(schemaFile, schemaStr);
+
   try {
     const result = execSync(
-      `claude -p --output-format json --json-schema '${schemaStr}' < "${tmpFile}"`,
+      `claude -p --output-format json --json-schema "$(cat "${schemaFile}")" < "${tmpFile}"`,
       {
         encoding: "utf-8",
         timeout: 180_000, // 3 minutes
@@ -155,6 +158,7 @@ function queryViaCLI<T>(prompt: string, jsonSchema: Record<string, unknown>): T 
     return parsed as T;
   } finally {
     try { fs.unlinkSync(tmpFile); } catch { /* ignore */ }
+    try { fs.unlinkSync(schemaFile); } catch { /* ignore */ }
   }
 }
 

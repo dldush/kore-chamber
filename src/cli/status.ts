@@ -2,8 +2,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { loadConfig } from "../core/config.js";
 import { listNotes, getAllSummaries, extractLinks } from "../core/vault.js";
+import { checkPendingMigrations } from "../core/migrate.js";
 
 export async function runStatus() {
+  checkPendingMigrations();
   const config = loadConfig();
   const { vaultPath } = config;
 

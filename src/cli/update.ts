@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { homedir } from "../core/platform.js";
+import { runMigrations } from "../core/migrate.js";
 
 const CLAUDE_DIR = path.join(homedir(), ".claude");
 
@@ -111,6 +112,13 @@ export async function runUpdate() {
   if (result.removed.length > 0) {
     console.log("\n🗑️  Removed (migrated to skills):");
     for (const f of result.removed) console.log(`  ❌ ${f}`);
+  }
+
+  // Config migrations
+  const migration = runMigrations();
+  if (migration && migration.applied.length > 0) {
+    console.log(`\n📦 Config 마이그레이션 (v${migration.from} → v${migration.to}):`);
+    for (const desc of migration.applied) console.log(`  ✅ ${desc}`);
   }
 
   console.log(`\n━━━ 업데이트 완료 (v${version}) ━━━\n`);

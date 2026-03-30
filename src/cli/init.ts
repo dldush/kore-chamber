@@ -5,6 +5,7 @@ import { execSync } from "node:child_process";
 import { stringify as yamlStringify } from "yaml";
 import { checkAuthStatus, doLogin } from "../llm/claude.js";
 import { homedir, whichCommand, defaultVaultPath, systemLang } from "../core/platform.js";
+import { LATEST_CONFIG_VERSION } from "../core/migrate.js";
 
 const KORE_DIR = path.join(homedir(), ".kore-chamber");
 const CLAUDE_DIR = path.join(homedir(), ".claude");
@@ -334,7 +335,14 @@ function saveConfig(answers: InitAnswers, jsonlPaths: string[]): void {
   fs.mkdirSync(KORE_DIR, { recursive: true });
 
   // config.yaml
-  const config: Record<string, unknown> = { vault_path: answers.vaultPath };
+  const config: Record<string, unknown> = {
+    config_version: LATEST_CONFIG_VERSION,
+    vault_path: answers.vaultPath,
+    dedup: {
+      clear_new: 0.30,
+      clear_duplicate: 0.70,
+    },
+  };
   if (jsonlPaths.length > 0) {
     config.history_paths = jsonlPaths;
   }

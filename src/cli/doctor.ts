@@ -1,8 +1,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { execSync } from "node:child_process";
+import { parse as yamlParse } from "yaml";
 import { checkAuthStatus } from "../llm/claude.js";
 import { homedir, whichCommand } from "../core/platform.js";
+import { checkPendingMigrations } from "../core/migrate.js";
 
 const HOME = homedir();
 const KORE_DIR = path.join(HOME, ".kore-chamber");
@@ -15,6 +17,7 @@ interface Check {
 }
 
 export async function runDoctor() {
+  checkPendingMigrations();
   console.log("\n🩺 Kore Chamber — doctor\n");
 
   const checks: Check[] = [
@@ -54,19 +57,26 @@ function checkFile(name: string, filePath: string): Check {
   };
 }
 
-function checkVaultPath(): Check {
+function readVaultPath(): string | null {
   const configPath = path.join(KORE_DIR, "config.yaml");
-  if (!fs.existsSync(configPath)) {
-    return { label: "볼트 경로", ok: false, detail: "config.yaml 없음" };
+  if (!fs.existsSync(configPath)) return null;
+
+  try {
+    const content = fs.readFileSync(configPath, "utf-8");
+    const config = yamlParse(content);
+    const vaultPath = config?.vault_path;
+    return typeof vaultPath === "string" ? vaultPath : null;
+  } catch {
+    return null;
+  }
+}
+
+function checkVaultPath(): Check {
+  const vaultPath = readVaultPath();
+  if (!vaultPath) {
+    return { label: "볼트 경로", ok: false, detail: "config.yaml 없음 또는 vault_path 누락" };
   }
 
-  const content = fs.readFileSync(configPath, "utf-8");
-  const match = content.match(/vault_path:\s*"?(.+?)"?\s*$/m);
-  if (!match) {
-    return { label: "볼트 경로", ok: false, detail: "vault_path 없음" };
-  }
-
-  const vaultPath = match[1];
   return {
     label: "볼트 경로",
     ok: fs.existsSync(vaultPath),
@@ -75,16 +85,8 @@ function checkVaultPath(): Check {
 }
 
 function checkVaultStructure(): Check {
-  const configPath = path.join(KORE_DIR, "config.yaml");
-  if (!fs.existsSync(configPath)) {
-    return { label: "볼트 구조", ok: false, detail: "config.yaml 없음" };
-  }
-
-  const content = fs.readFileSync(configPath, "utf-8");
-  const match = content.match(/vault_path:\s*"?(.+?)"?\s*$/m);
-  if (!match) return { label: "볼트 구조", ok: false };
-
-  const vaultPath = match[1];
+  const vaultPath = readVaultPath();
+  if (!vaultPath) return { label: "볼트 구조", ok: false, detail: "vault_path 없음" };
   const required = ["00-Inbox", "10-Concepts", "20-Troubleshooting", "30-Decisions", "40-Patterns", "50-MOC"];
   const missing = required.filter((f) => !fs.existsSync(path.join(vaultPath, f)));
 
@@ -96,31 +98,17 @@ function checkVaultStructure(): Check {
 }
 
 function checkProfile(): Check {
-  const configPath = path.join(KORE_DIR, "config.yaml");
-  if (!fs.existsSync(configPath)) {
-    return { label: "MY-PROFILE.md", ok: false };
-  }
+  const vaultPath = readVaultPath();
+  if (!vaultPath) return { label: "MY-PROFILE.md", ok: false };
 
-  const content = fs.readFileSync(configPath, "utf-8");
-  const match = content.match(/vault_path:\s*"?(.+?)"?\s*$/m);
-  if (!match) return { label: "MY-PROFILE.md", ok: false };
-
-  const profilePath = path.join(match[1], "MY-PROFILE.md");
-  return checkFile("MY-PROFILE.md", profilePath);
+  return checkFile("MY-PROFILE.md", path.join(vaultPath, "MY-PROFILE.md"));
 }
 
 function checkAIGuide(): Check {
-  const configPath = path.join(KORE_DIR, "config.yaml");
-  if (!fs.existsSync(configPath)) {
-    return { label: "AI-GUIDE.md", ok: false };
-  }
+  const vaultPath = readVaultPath();
+  if (!vaultPath) return { label: "AI-GUIDE.md", ok: false };
 
-  const content = fs.readFileSync(configPath, "utf-8");
-  const match = content.match(/vault_path:\s*"?(.+?)"?\s*$/m);
-  if (!match) return { label: "AI-GUIDE.md", ok: false };
-
-  const guidePath = path.join(match[1], "AI-GUIDE.md");
-  return checkFile("AI-GUIDE.md", guidePath);
+  return checkFile("AI-GUIDE.md", path.join(vaultPath, "AI-GUIDE.md"));
 }
 
 function checkCommands(): Check {

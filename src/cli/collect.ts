@@ -10,11 +10,12 @@ import {
   updateProfileSection,
   type NoteFrontmatter,
 } from "../core/vault.js";
-import { checkDuplicate, batchDedup } from "../core/dedup.js";
+import { checkDuplicate, batchDedup, type DedupThresholds } from "../core/dedup.js";
 import { generateSlug } from "../core/slug.js";
 import { findBestMOC, addToMOC } from "../core/moc.js";
 import { searchRelated, addLinks, addBatchLinks } from "../core/linker.js";
 import { ensureAuth } from "../llm/claude.js";
+import { checkPendingMigrations } from "../core/migrate.js";
 import {
   extractKnowledge,
   judgeBorderline,
@@ -154,8 +155,10 @@ async function collect(
   sessionId: string | undefined,
   log: (...args: unknown[]) => void
 ): Promise<CollectOutput> {
+  checkPendingMigrations();
+
   const config = loadConfig();
-  const { vaultPath } = config;
+  const { vaultPath, dedup: dedupThresholds } = config;
 
   log(`\n🧠 Kore Chamber — collect${dryRun ? " (dry-run)" : ""}\n`);
 
@@ -211,12 +214,12 @@ async function collect(
   log(`   ${extraction.knowledge_items.length}개 항목 추출\n`);
 
   // 4. Batch dedup (within extraction)
-  const keepIndices = batchDedup(extraction.knowledge_items.map((i) => i.summary));
+  const keepIndices = batchDedup(extraction.knowledge_items.map((i) => i.summary), dedupThresholds);
   const uniqueItems = keepIndices.map((i) => extraction.knowledge_items[i]);
 
   // 5. Plan each item
   log("📋 저장 계획 수립...");
-  const plan = await buildPlan(uniqueItems, existingSummaries, vaultPath);
+  const plan = await buildPlan(uniqueItems, existingSummaries, vaultPath, dedupThresholds);
 
   // 6. Plan profile updates
   for (const update of extraction.profile_updates) {
@@ -239,14 +242,14 @@ async function collect(
   // 8. Execute (unless dry-run)
   if (dryRun) {
     log("🔍 dry-run 모드: 파일 변경 없음.\n");
-    return buildOutput(baseOutput, plan, []);
+    return buildOutput(baseOutput, plan, [], 0);
   }
 
   log("\n✏️  저장 중...\n");
-  const execResults = await executePlan(plan, vaultPath, extraction.profile_updates, log);
+  const { results: execResults, batchLinksAdded } = await executePlan(plan, vaultPath, extraction.profile_updates, log);
 
   log("━━━ Collect 완료 ━━━\n");
-  return buildOutput(baseOutput, plan, execResults);
+  return buildOutput(baseOutput, plan, execResults, batchLinksAdded);
 }
 
 // ─── Build Plan ───
@@ -254,12 +257,13 @@ async function collect(
 async function buildPlan(
   items: KnowledgeItem[],
   existingSummaries: ReturnType<typeof getAllSummaries>,
-  vaultPath: string
+  vaultPath: string,
+  thresholds: DedupThresholds
 ): Promise<CollectPlan> {
   const plan: CollectPlan = { items: [], profileUpdates: [] };
 
   for (const item of items) {
-    const dedup = checkDuplicate(item.summary, existingSummaries);
+    const dedup = checkDuplicate(item.summary, existingSummaries, thresholds);
     const slug = generateSlug(item.title);
     const folder = getCategoryFolder(item.category);
     const filePath = path.join(vaultPath, folder, `${slug}.md`);
@@ -354,7 +358,7 @@ async function executePlan(
   vaultPath: string,
   profileUpdates: { dimension: string; observed: string; confidence: string }[],
   log: (...args: unknown[]) => void
-): Promise<ExecResult[]> {
+): Promise<{ results: ExecResult[]; batchLinksAdded: number }> {
   const storedNotes: { path: string; slug: string }[] = [];
   const allSummaries = getAllSummaries(vaultPath);
   const results: ExecResult[] = [];
@@ -412,7 +416,7 @@ async function executePlan(
     }
   }
 
-  return results;
+  return { results, batchLinksAdded: batchCount };
 }
 
 // ─── Build JSON output ───
@@ -420,7 +424,8 @@ async function executePlan(
 function buildOutput(
   base: CollectOutput,
   plan: CollectPlan,
-  execResults: ExecResult[]
+  execResults: ExecResult[],
+  batchLinksAdded: number
 ): CollectOutput {
   const resultMap = new Map(execResults.map((r) => [r.slug, r]));
 
@@ -450,12 +455,7 @@ function buildOutput(
     }
   }
 
-  let batchLinks = 0;
-  const activeItems = plan.items.filter((p) => p.action !== "skip");
-  if (activeItems.length > 1) {
-    batchLinks = (activeItems.length * (activeItems.length - 1)) / 2;
-  }
-  base.batchLinksAdded = batchLinks;
+  base.batchLinksAdded = batchLinksAdded;
 
   for (const u of plan.profileUpdates) {
     if (u.action === "apply") {

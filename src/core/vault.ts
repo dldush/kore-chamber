@@ -177,7 +177,7 @@ export function addRelatedLink(filePath: string, targetSlug: string): boolean {
   // Find or create "## 관련 노트" section
   if (note.body.includes("## 관련 노트")) {
     const updated = note.body.replace(
-      "## 관련 노트",
+      /^## 관련 노트$/m,
       `## 관련 노트\n- ${link}`
     );
     writeNote(filePath, note.frontmatter, updated);
@@ -197,6 +197,10 @@ export function readProfile(vaultPath: string): string {
   return fs.readFileSync(profilePath, "utf-8");
 }
 
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export function updateProfileSection(
   vaultPath: string,
   section: string,
@@ -207,7 +211,7 @@ export function updateProfileSection(
 
   let content = fs.readFileSync(profilePath, "utf-8");
   const sectionRegex = new RegExp(
-    `(## ${section}\\n)([\\s\\S]*?)(?=\\n## |$)`
+    `(## ${escapeRegex(section)}\\n)([\\s\\S]*?)(?=\\n## |$)`
   );
 
   if (sectionRegex.test(content)) {

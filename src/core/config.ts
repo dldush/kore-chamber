@@ -2,13 +2,21 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as yamlParse } from "yaml";
 import { homedir } from "./platform.js";
+import { LATEST_CONFIG_VERSION } from "./migrate.js";
+import type { DedupThresholds } from "./dedup.js";
 
 const KORE_DIR = path.join(homedir(), ".kore-chamber");
 
 export interface KoreConfig {
   vaultPath: string;
   historyPaths?: string[];
+  dedup: DedupThresholds;
 }
+
+const DEFAULT_DEDUP: DedupThresholds = {
+  clearNew: 0.30,
+  clearDuplicate: 0.70,
+};
 
 export function loadConfig(): KoreConfig {
   const configPath = path.join(KORE_DIR, "config.yaml");
@@ -25,12 +33,20 @@ export function loadConfig(): KoreConfig {
     throw new Error("config.yaml에 vault_path가 없습니다.");
   }
 
+  const dedupRaw = raw.dedup as Record<string, number> | undefined;
+
   return {
     vaultPath: raw.vault_path,
     historyPaths: raw.history_paths,
+    dedup: {
+      clearNew: dedupRaw?.clear_new ?? DEFAULT_DEDUP.clearNew,
+      clearDuplicate: dedupRaw?.clear_duplicate ?? DEFAULT_DEDUP.clearDuplicate,
+    },
   };
 }
 
 export function getVaultPath(): string {
   return loadConfig().vaultPath;
 }
+
+export { LATEST_CONFIG_VERSION };
