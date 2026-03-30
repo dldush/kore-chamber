@@ -410,6 +410,7 @@ User profile: ${vaultPath}/MY-PROFILE.md
   3. Check neighboring notes within the same MOC (3rd activation)
   4. Judge relevance by summary, read the full body only when needed
 - At the end of a conversation, ask if the user wants to run /kc-collect
+- If CLI output contains [UPDATE AVAILABLE], tell the user to run "npx kore-chamber update"
 `;
 
   fs.writeFileSync(claudeMdPath, content + rules);
