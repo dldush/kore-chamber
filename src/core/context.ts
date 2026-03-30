@@ -1,5 +1,5 @@
 import * as path from "node:path";
-import { getAllSummaries, readNote, readProfile } from "./vault.js";
+import { getAllSummaries, readNote, readProfile, type NoteType } from "./vault.js";
 
 export interface SessionContextInput {
   cwd?: string;
@@ -14,7 +14,7 @@ export interface PromptContextInput {
 interface ScoredNote {
   slug: string;
   summary: string;
-  type: string;
+  type: NoteType;
   score: number;
 }
 
@@ -93,7 +93,7 @@ export function buildPromptContext(
         score: promptScore + cwdScore + confidenceScore + typeScore,
       };
     })
-    .filter((note): note is ScoredNote => Boolean(note))
+    .filter((note): note is ScoredNote => note !== null)
     .sort((a, b) => b.score - a.score)
     .slice(0, 3);
 
@@ -138,7 +138,7 @@ function pickRelevantSessionNotes(
   const scored = summaries.map((summary) => {
     const note = readNote(summary.path);
     const createdAt = note?.frontmatter.created || "1970-01-01";
-    const lastReferenced = (note?.frontmatter.last_referenced as string | undefined) || createdAt;
+    const lastReferenced = note?.frontmatter.last_referenced ?? createdAt;
     const freshnessScore = scoreDate(lastReferenced) + scoreDate(createdAt) / 2;
     const confidenceScore = Math.round(summary.confidence * 10);
     const projectScore = scoreTokens(cwdTokens, [

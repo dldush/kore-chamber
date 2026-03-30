@@ -4,12 +4,20 @@ import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 
 // ─── Types ───
 
+export type NoteType = "concept" | "troubleshooting" | "decision" | "pattern";
+
+export function isNoteType(value: unknown): value is NoteType {
+  return value === "concept" || value === "troubleshooting" || value === "decision" || value === "pattern";
+}
+
 export interface NoteFrontmatter {
+  title: string;
   created: string;
   tags: string[];
-  type: string;
+  type: NoteType;
   summary: string;
-  [key: string]: unknown;
+  confidence: number;
+  last_referenced?: string;
 }
 
 export interface Note {
@@ -23,7 +31,7 @@ export interface NoteSummary {
   slug: string;
   summary: string;
   tags: string[];
-  type: string;
+  type: NoteType;
   links: string[];
   confidence: number;
 }
@@ -37,15 +45,15 @@ const KNOWLEDGE_FOLDERS = [
   "40-Patterns",
 ];
 
-const CATEGORY_TO_FOLDER: Record<string, string> = {
+const TYPE_TO_FOLDER: Record<NoteType, string> = {
   concept: "10-Concepts",
   troubleshooting: "20-Troubleshooting",
   decision: "30-Decisions",
   pattern: "40-Patterns",
 };
 
-export function getCategoryFolder(category: string): string {
-  return CATEGORY_TO_FOLDER[category] || "00-Inbox";
+export function getTypeFolder(type: NoteType): string {
+  return TYPE_TO_FOLDER[type];
 }
 
 // ─── Frontmatter parsing ───
@@ -67,7 +75,7 @@ export function splitFrontmatter(content: string): {
 
   if (!match) {
     return {
-      frontmatter: { created: "", tags: [], type: "", summary: "" },
+      frontmatter: emptyFrontmatter(),
       body: content,
     };
   }
@@ -76,22 +84,31 @@ export function splitFrontmatter(content: string): {
   try {
     raw = yamlParse(match[1]) || {};
   } catch {
-    // Malformed YAML frontmatter — return defaults
     return {
-      frontmatter: { created: "", tags: [], type: "", summary: "" },
+      frontmatter: emptyFrontmatter(),
       body: match[2],
     };
   }
 
   return {
-    frontmatter: {
-      created: raw.created as string || "",
-      tags: (raw.tags as string[]) || [],
-      type: raw.type as string || "",
-      summary: raw.summary as string || "",
-      ...raw,
-    },
+    frontmatter: parseFrontmatter(raw),
     body: match[2],
+  };
+}
+
+function emptyFrontmatter(): NoteFrontmatter {
+  return { title: "", created: "", tags: [], type: "concept", summary: "", confidence: 0.5 };
+}
+
+function parseFrontmatter(raw: Record<string, unknown>): NoteFrontmatter {
+  return {
+    title: typeof raw.title === "string" ? raw.title : "",
+    created: typeof raw.created === "string" ? raw.created : "",
+    tags: Array.isArray(raw.tags) ? (raw.tags as string[]) : [],
+    type: isNoteType(raw.type) ? raw.type : "concept",
+    summary: typeof raw.summary === "string" ? raw.summary : "",
+    confidence: typeof raw.confidence === "number" ? raw.confidence : 0.5,
+    last_referenced: typeof raw.last_referenced === "string" ? raw.last_referenced : undefined,
   };
 }
 
@@ -150,7 +167,7 @@ export function getAllSummaries(vaultPath: string): NoteSummary[] {
       tags: note.frontmatter.tags,
       type: note.frontmatter.type,
       links,
-      confidence: (note.frontmatter.confidence as number) ?? 0.5,
+      confidence: note.frontmatter.confidence,
     });
   }
 
@@ -205,8 +222,7 @@ export function bumpConfidence(filePath: string): void {
   const note = readNote(filePath);
   if (!note) return;
 
-  const current = (note.frontmatter.confidence as number) ?? 0.5;
-  note.frontmatter.confidence = Math.min(1.0, +(current + 0.1).toFixed(1));
+  note.frontmatter.confidence = Math.min(1.0, +(note.frontmatter.confidence + 0.1).toFixed(1));
   writeNote(filePath, note.frontmatter, note.body);
 }
 
@@ -221,7 +237,7 @@ export function touchLastReferenced(filePath: string): void {
 export type Freshness = "current" | "aging" | "stale";
 
 export function getFreshness(frontmatter: NoteFrontmatter): Freshness {
-  const refDate = (frontmatter.last_referenced as string) || frontmatter.created;
+  const refDate = frontmatter.last_referenced ?? frontmatter.created;
   if (!refDate) return "stale";
 
   const days = Math.floor(

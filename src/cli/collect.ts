@@ -10,7 +10,7 @@ import {
 import {
   bumpConfidence,
   getAllSummaries,
-  getCategoryFolder,
+  getTypeFolder,
   readNote,
   type NoteFrontmatter,
   writeNote,
@@ -340,7 +340,7 @@ async function buildPlan(
   for (const item of items) {
     const dedup = checkDuplicate(item.summary, existingSummaries, thresholds);
     const slug = generateSlug(item.title);
-    const folder = getCategoryFolder(item.category);
+    const folder = getTypeFolder(item.type);
     const filePath = path.join(vaultPath, folder, `${slug}.md`);
     const mocPath = findBestMOC(vaultPath, item.tags);
 
@@ -436,9 +436,10 @@ async function executePlan(
     if (planned.action === "new") {
       const today = new Date().toISOString().split("T")[0];
       const frontmatter: NoteFrontmatter = {
+        title: planned.item.title,
         created: today,
         tags: planned.item.tags,
-        type: planned.item.category,
+        type: planned.item.type,
         summary: planned.item.summary,
         confidence: 0.5,
       };

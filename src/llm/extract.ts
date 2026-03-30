@@ -1,4 +1,5 @@
 import { queryLLM } from "./claude.js";
+import type { NoteType } from "../core/vault.js";
 
 // ─── Re-exports for pipeline convenience ───
 export { queryLLM } from "./claude.js";
@@ -8,7 +9,7 @@ export { queryLLM } from "./claude.js";
 export interface KnowledgeItem {
   title: string;
   summary: string;
-  category: "concept" | "troubleshooting" | "decision" | "pattern";
+  type: NoteType;
   tags: string[];
   content: string;
   source_context: string;
@@ -33,7 +34,7 @@ const EXTRACTION_SCHEMA = {
             type: "string",
             description: "One-sentence summary for dedup and search. Must capture the core concept.",
           },
-          category: {
+          type: {
             type: "string",
             enum: ["concept", "troubleshooting", "decision", "pattern"],
           },
@@ -51,7 +52,7 @@ const EXTRACTION_SCHEMA = {
             description: "One sentence — what part of the conversation this came from",
           },
         },
-        required: ["title", "summary", "category", "tags", "content", "source_context"],
+        required: ["title", "summary", "type", "tags", "content", "source_context"],
       },
     },
   },
@@ -107,7 +108,7 @@ export async function extractKnowledge(
     knowledge_items: (result.knowledge_items || []).filter(
       (item) =>
         item.title &&
-        item.category &&
+        item.type &&
         item.content &&
         item.content.length > 20
     ),

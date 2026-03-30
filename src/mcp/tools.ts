@@ -107,7 +107,7 @@ export function registerTools(server: McpServer, vaultPath: string): void {
         `type: ${note.frontmatter.type}`,
         `tags: ${note.frontmatter.tags.join(", ")}`,
         `created: ${note.frontmatter.created}`,
-        `confidence: ${(note.frontmatter.confidence as number) ?? 0.5}`,
+        `confidence: ${note.frontmatter.confidence}`,
         `freshness: ${getFreshness(note.frontmatter)}`,
         `summary: ${note.frontmatter.summary}`,
       ].join("\n");
