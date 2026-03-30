@@ -1,6 +1,6 @@
 {
   "name": "kore-chamber",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Auto-crystallize Claude conversations into Obsidian notes",
   "type": "module",
   "license": "MIT",
