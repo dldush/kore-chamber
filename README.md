@@ -38,7 +38,7 @@ Session starts
   → MY-PROFILE summary + recent notes injected into Claude context
 
 You type a prompt
-  → Relevant vault notes matched by keyword and injected
+  → Relevant vault notes matched by semantic similarity and injected
 
 Session ends
   → JSONL queued → background worker → collect → vault updated
@@ -55,11 +55,11 @@ When you run `kore-chamber` for the first time, it scans your existing Claude se
 
 ### Collect
 
-Collect is the extraction engine. It reads a Claude session JSONL, filters noise, and sends the meaningful turns to an LLM that decides what's worth keeping. Before writing, it compares each candidate against existing notes and either creates a new note, merges into an existing one, or skips a duplicate. When hooks are installed, collect runs automatically in the background every time a session ends — you never have to trigger it manually.
+Collect is the extraction engine. It reads a Claude session JSONL, filters noise, and sends the meaningful turns to an LLM that decides what's worth keeping. Before writing, it compares each candidate against existing notes using local semantic embeddings — `paraphrase-multilingual-MiniLM-L12-v2`, mean-pooled and L2-normalized, cosine similarity — and either creates a new note, merges into an existing one, or skips a duplicate. No external API is involved in deduplication; the model runs fully on-device (downloaded once, ~125 MB, cached at `~/.cache/huggingface/`). When hooks are installed, collect runs automatically in the background every time a session ends — you never have to trigger it manually.
 
 ### Injection
 
-At the start of every session, Kore Chamber reads `MY-PROFILE.md` and scores your recent notes by freshness, confidence, and relevance to the current project directory. The top results are injected into Claude's context as `additionalContext` before the first message. When you submit a prompt, the same scoring runs again against the prompt text, and the most relevant notes are attached. Claude always knows who you are and what you've already learned.
+At the start of every session, Kore Chamber reads `MY-PROFILE.md` and scores your recent notes by freshness, confidence, and relevance to the current project directory. The top results are injected into Claude's context as `additionalContext` before the first message. When you submit a prompt, the same local embedding model computes semantic similarity between the prompt and every note in the vault — notes that match in meaning, not just in keywords, are attached. Claude always knows who you are and what you've already learned.
 
 ### Explore
 
