@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -22,6 +23,26 @@ export function whichCommand(bin: string): string {
  */
 export function defaultVaultPath(): string {
   return path.join(os.homedir(), "Documents", "KoreChamber");
+}
+
+/**
+ * Returns true if kore-chamber is running from a temporary npx cache path.
+ * Such paths are not stable enough for hook automation (the executable may disappear).
+ */
+export function isEphemeralInstall(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+
+  let resolved = entry;
+  try {
+    resolved = fs.realpathSync(path.resolve(entry));
+  } catch { /* fall back to original path */ }
+
+  return (
+    resolved.includes(`${path.sep}.npm${path.sep}_npx${path.sep}`) ||
+    resolved.includes(`${path.sep}.npm${path.sep}_cacache${path.sep}`) ||
+    resolved.includes(`${path.sep}npm-cache${path.sep}_npx${path.sep}`)
+  );
 }
 
 /**

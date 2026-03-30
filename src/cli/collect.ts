@@ -1,6 +1,12 @@
 import * as path from "node:path";
 import { loadConfig } from "../core/config.js";
-import { findAllJsonl, formatConversation, parseSession, type JsonlFileInfo } from "../core/jsonl.js";
+import {
+  findAllJsonl,
+  formatConversation,
+  getJsonlInfoByPath,
+  parseSession,
+  type JsonlFileInfo,
+} from "../core/jsonl.js";
 import {
   bumpConfidence,
   getAllSummaries,
@@ -17,6 +23,7 @@ import { generateSlug } from "../core/slug.js";
 import { ensureAuth } from "../llm/claude.js";
 import { runMigrations } from "../core/migrate.js";
 import { getUnprocessedSessions, markProcessed } from "../core/tracker.js";
+import { CliError } from "./errors.js";
 
 interface CollectOutput {
   ok: boolean;
@@ -98,6 +105,8 @@ interface ExecResult {
 interface CollectArgs {
   dryRun: boolean;
   sessionId?: string;
+  transcriptPath?: string;
+  projectDir?: string;
   output: "json" | "markdown";
   allUnprocessed: boolean;
 }
@@ -111,7 +120,7 @@ interface CollectSessionOptions {
 export async function runCollect(args: string[] = []) {
   runMigrations();
 
-  const { dryRun, sessionId, output, allUnprocessed } = parseArgs(args);
+  const { dryRun, sessionId, transcriptPath, projectDir, output, allUnprocessed } = parseArgs(args);
   const isJson = output === "json";
   const log = isJson ? () => {} : console.log.bind(console);
 
@@ -127,7 +136,6 @@ export async function runCollect(args: string[] = []) {
       log(`   ${dryRun ? "dry-run 모드입니다." : "LLM API 토큰이 사용됩니다."}`);
       log(`   예상 시간: ~${estimateTime(targets.length)}\n`);
 
-      ensureAuth();
       const results = await collectBatch(targets, { dryRun, log });
       if (isJson) {
         console.log(JSON.stringify(results, null, 2));
@@ -135,9 +143,7 @@ export async function runCollect(args: string[] = []) {
       return;
     }
 
-    const target = sessionId
-      ? findAllJsonl(sessionId)[0]
-      : getUnprocessedSessions(findAllJsonl())[0];
+    const target = resolveSingleTarget({ sessionId, transcriptPath, projectDir });
 
     if (!target) {
       emitNoSessions(isJson, sessionId
@@ -146,7 +152,6 @@ export async function runCollect(args: string[] = []) {
       return;
     }
 
-    ensureAuth();
     const result = await collectSession(target, { dryRun, log, showBanner: true });
     if (isJson) {
       console.log(JSON.stringify(result, null, 2));
@@ -155,16 +160,33 @@ export async function runCollect(args: string[] = []) {
     const message = err instanceof Error ? err.message : String(err);
     if (isJson) {
       console.log(JSON.stringify({ ok: false, error: message }, null, 2));
-    } else {
-      console.error(`\n❌ ${message}\n`);
+      throw new CliError("", { handled: true });
     }
-    process.exit(1);
+    throw err instanceof Error ? err : new Error(message);
   }
+}
+
+function resolveSingleTarget(args: {
+  sessionId?: string;
+  transcriptPath?: string;
+  projectDir?: string;
+}): JsonlFileInfo | null {
+  if (args.transcriptPath) {
+    return getJsonlInfoByPath(args.transcriptPath, args.projectDir);
+  }
+
+  const target = args.sessionId
+    ? findAllJsonl(args.sessionId)[0]
+    : getUnprocessedSessions(findAllJsonl())[0];
+
+  return target ?? null;
 }
 
 function parseArgs(args: string[]): CollectArgs {
   let dryRun = false;
   let sessionId: string | undefined;
+  let transcriptPath: string | undefined;
+  let projectDir: string | undefined;
   let output: "json" | "markdown" = "markdown";
   let allUnprocessed = false;
 
@@ -172,6 +194,8 @@ function parseArgs(args: string[]): CollectArgs {
     if (args[i] === "--dry-run") dryRun = true;
     if (args[i] === "--all") allUnprocessed = true;
     if (args[i] === "--session" && args[i + 1]) sessionId = args[++i];
+    if (args[i] === "--transcript-path" && args[i + 1]) transcriptPath = args[++i];
+    if (args[i] === "--project-dir" && args[i + 1]) projectDir = args[++i];
     if (args[i] === "--output" && args[i + 1]) {
       output = args[++i] === "json" ? "json" : "markdown";
     }
@@ -181,7 +205,15 @@ function parseArgs(args: string[]): CollectArgs {
     throw new Error("--all과 --session은 함께 사용할 수 없습니다.");
   }
 
-  return { dryRun, sessionId, output, allUnprocessed };
+  if (allUnprocessed && transcriptPath) {
+    throw new Error("--all과 --transcript-path는 함께 사용할 수 없습니다.");
+  }
+
+  if (sessionId && transcriptPath) {
+    throw new Error("--session과 --transcript-path는 함께 사용할 수 없습니다.");
+  }
+
+  return { dryRun, sessionId, transcriptPath, projectDir, output, allUnprocessed };
 }
 
 async function collectBatch(
@@ -257,6 +289,7 @@ async function collectSession(
   const existingSummaries = getAllSummaries(vaultPath);
   const conversation = formatConversation(turns);
 
+  ensureAuth();
   options.log("🤖 지식 추출 중...");
   const extraction = await extractKnowledge(
     conversation,

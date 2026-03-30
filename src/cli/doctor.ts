@@ -3,8 +3,9 @@ import * as path from "node:path";
 import { execSync } from "node:child_process";
 import { parse as yamlParse } from "yaml";
 import { checkAuthStatus } from "../llm/claude.js";
-import { homedir, whichCommand } from "../core/platform.js";
+import { homedir, isEphemeralInstall, whichCommand } from "../core/platform.js";
 import { runMigrations } from "../core/migrate.js";
+import { getClaudeSettingsPath } from "../core/claude-settings.js";
 
 const HOME = homedir();
 const KORE_DIR = path.join(HOME, ".kore-chamber");
@@ -27,6 +28,9 @@ export async function runDoctor() {
     checkAIGuide(),
     checkClaudeCLI(),
     checkClaudeAuth(),
+    checkGlobalInstall(),
+    checkHookScripts(),
+    checkHooksRegistered(),
   ];
 
   let hasError = false;
@@ -39,7 +43,7 @@ export async function runDoctor() {
 
   console.log(
     hasError
-      ? "\n⚠️  문제가 발견되었습니다. npx kore-chamber init으로 설정을 다시 확인하세요.\n"
+      ? "\n⚠️  문제가 발견되었습니다. `kore-chamber` 또는 `kore-chamber init`으로 설정을 다시 확인하세요.\n"
       : "\n✅ 모든 검사 통과.\n"
   );
 }
@@ -124,5 +128,73 @@ function checkClaudeAuth(): Check {
     label: "Claude 인증",
     ok: false,
     detail: "로그인 안 됨 — `claude` 실행 후 `/login` 필요",
+  };
+}
+
+function checkGlobalInstall(): Check {
+  if (isEphemeralInstall()) {
+    return {
+      label: "전역 설치",
+      ok: false,
+      detail: "npx 임시 경로 — hooks 자동화를 위해 `npm install -g kore-chamber` 권장",
+    };
+  }
+
+  const entry = process.argv[1] ?? "";
+  let resolved = entry;
+  try {
+    resolved = fs.realpathSync(path.resolve(entry));
+  } catch { /* 못 읽으면 원래 경로 사용 */ }
+
+  return { label: "전역 설치", ok: true, detail: resolved };
+}
+
+function checkHookScripts(): Check {
+  const hooksDir = path.join(KORE_DIR, "hooks");
+  const scripts = ["session-end.sh", "session-start.sh", "user-prompt.sh"];
+  const missing = scripts.filter((s) => !fs.existsSync(path.join(hooksDir, s)));
+
+  return {
+    label: "hook 스크립트",
+    ok: missing.length === 0,
+    detail: missing.length > 0
+      ? `없음: ${missing.join(", ")} — \`kore-chamber hooks install\` 실행 필요`
+      : hooksDir,
+  };
+}
+
+function checkHooksRegistered(): Check {
+  const settingsPath = getClaudeSettingsPath("user");
+  if (!fs.existsSync(settingsPath)) {
+    return {
+      label: "hook 등록",
+      ok: false,
+      detail: `${settingsPath} 없음 — Claude Code가 설치되어 있는지 확인하세요`,
+    };
+  }
+
+  let settings: Record<string, unknown>;
+  try {
+    settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8")) as Record<string, unknown>;
+  } catch {
+    return { label: "hook 등록", ok: false, detail: "settings.json 파싱 실패" };
+  }
+
+  const events = ["SessionEnd", "SessionStart", "UserPromptSubmit"];
+  const hooks = settings?.hooks as Record<string, Array<{ hooks?: Array<{ type: string; command: string }> }>> | undefined;
+
+  const missing = events.filter((event) => {
+    const groups = hooks?.[event] ?? [];
+    return !groups.some((g) =>
+      g.hooks?.some((h) => h.type === "command" && h.command.includes("kore-chamber"))
+    );
+  });
+
+  return {
+    label: "hook 등록",
+    ok: missing.length === 0,
+    detail: missing.length > 0
+      ? `미등록: ${missing.join(", ")} — \`kore-chamber hooks install\` 실행 필요`
+      : "SessionEnd / SessionStart / UserPromptSubmit 등록됨",
   };
 }

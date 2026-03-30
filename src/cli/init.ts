@@ -1,15 +1,19 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import * as readline from "node:readline";
 import { execSync } from "node:child_process";
 import { stringify as yamlStringify } from "yaml";
 import { checkAuthStatus, doLogin } from "../llm/claude.js";
-import { defaultVaultPath, homedir, systemLang, whichCommand } from "../core/platform.js";
+import { defaultVaultPath, homedir, isEphemeralInstall, systemLang, whichCommand } from "../core/platform.js";
 import { LATEST_CONFIG_VERSION, runMigrations } from "../core/migrate.js";
+import {
+  askQuestion,
+  buildProfileContent,
+  createReadline,
+  type Lang,
+  promptProfileAnswers,
+} from "./profile-form.js";
 
 const KORE_DIR = path.join(homedir(), ".kore-chamber");
-
-type Lang = "ko" | "en";
 
 const msg = {
   banner: {
@@ -24,22 +28,6 @@ const msg = {
     ko: `📁 폴더가 없습니다. 생성합니다: ${resolved}`,
     en: `📁 Folder not found. Creating: ${resolved}`,
   }),
-  questions: {
-    ko: [
-      "\n[1/5] 공부하거나 일하는 분야\n      > ",
-      "\n[2/5] 현재 수준\n      > ",
-      "\n[3/5] 목표\n      > ",
-      "\n[4/5] 학습 스타일\n      > ",
-      "\n[5/5] 깊이 파고 싶은 영역\n      > ",
-    ],
-    en: [
-      "\n[1/5] Your field\n      > ",
-      "\n[2/5] Current level\n      > ",
-      "\n[3/5] Goal\n      > ",
-      "\n[4/5] Learning style\n      > ",
-      "\n[5/5] Area to go deep on\n      > ",
-    ],
-  },
   installing: {
     ko: "\n━━━ 설치 중 ━━━\n",
     en: "\n━━━ Installing ━━━\n",
@@ -100,6 +88,30 @@ const msg = {
     ko: "  ↳ MY-PROFILE.md가 이미 있어 유지합니다.",
     en: "  ↳ Existing MY-PROFILE.md kept as-is.",
   },
+  hooksInstalling: {
+    ko: "\n🔗 Claude hooks 설치:",
+    en: "\n🔗 Installing Claude hooks:",
+  },
+  hooksSkippedNpx: {
+    ko: "  ⚠️  npx 실행 중 — hooks 자동화는 `npm install -g kore-chamber` 설치 후 `kore-chamber hooks install`로 실행하세요.",
+    en: "  ⚠️  Running via npx — for hook automation, install globally with `npm install -g kore-chamber` then run `kore-chamber hooks install`.",
+  },
+  hooksFailed: {
+    ko: "  ⚠️  hooks 설치 실패 — 나중에 `kore-chamber hooks install`로 재시도하세요.",
+    en: "  ⚠️  hooks install failed — retry later with `kore-chamber hooks install`.",
+  },
+  collectPrompt: {
+    ko: "\n과거 대화를 지금 바로 수집할까요? 세션 수에 따라 수 분이 걸릴 수 있습니다. [y/N] ",
+    en: "\nBootstrap the vault from past conversations now? This may take a few minutes. [y/N] ",
+  },
+  collectRunning: {
+    ko: "\n📥 과거 세션 수집 중...",
+    en: "\n📥 Collecting past sessions...",
+  },
+  collectFailed: {
+    ko: "  ⚠️  수집 중 오류 — 나중에 `kore-chamber collect --all`로 재시도하세요.",
+    en: "  ⚠️  Collection failed — retry later with `kore-chamber collect --all`.",
+  },
   done: {
     ko: "\n━━━ 설치 완료 ━━━\n",
     en: "\n━━━ Installation complete ━━━\n",
@@ -107,17 +119,29 @@ const msg = {
   nextSteps: {
     ko: [
       "다음 단계:",
-      "  1. kore-chamber collect --all  (과거 대화에서 초기 볼트 구성)",
-      "  2. 평소처럼 AI와 대화",
-      "  3. kore-chamber collect         (새 대화에서 지식 수집)",
+      "  - 평소처럼 AI와 대화 (세션 종료 시 자동 수집됨)",
+      "  - kore-chamber status  (볼트 현황 확인)",
+    ],
+    en: [
+      "Next steps:",
+      "  - Keep talking to AI as usual (sessions collected automatically)",
+      "  - kore-chamber status  (check vault status)",
+    ],
+  },
+  nextStepsNoHooks: {
+    ko: [
+      "다음 단계:",
+      "  1. npm install -g kore-chamber  (전역 설치)",
+      "  2. kore-chamber hooks install   (세션 자동 수집 활성화)",
+      "  3. 평소처럼 AI와 대화",
       "  4. kore-chamber status          (볼트 현황 확인)",
     ],
     en: [
       "Next steps:",
-      "  1. kore-chamber collect --all  (bootstrap from past conversations)",
-      "  2. Keep talking to AI as usual",
-      "  3. kore-chamber collect        (collect from new conversations)",
-      "  4. kore-chamber status         (check vault status)",
+      "  1. npm install -g kore-chamber  (install globally)",
+      "  2. kore-chamber hooks install   (enable automatic collection)",
+      "  3. Keep talking to AI as usual",
+      "  4. kore-chamber status          (check vault status)",
     ],
   },
 } as const;
@@ -130,19 +154,6 @@ function tLines(entry: { ko: readonly string[]; en: readonly string[] }, lang: L
   return entry[lang];
 }
 
-function createRL(): readline.Interface {
-  return readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-}
-
-async function ask(rl: readline.Interface, question: string): Promise<string> {
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => resolve(answer.trim()));
-  });
-}
-
 interface InitAnswers {
   vaultPath: string;
   field: string;
@@ -152,11 +163,11 @@ interface InitAnswers {
   deepInterest: string;
 }
 
-async function getVaultPath(rl: readline.Interface, lang: Lang): Promise<string> {
+async function getVaultPath(rl: ReturnType<typeof createReadline>, lang: Lang): Promise<string> {
   const def = defaultVaultPath();
   console.log(t(msg.banner, lang));
 
-  const answer = await ask(rl, t(msg.vaultPrompt(def), lang));
+  const answer = await askQuestion(rl, t(msg.vaultPrompt(def), lang));
   const chosen = answer || def;
   const resolved = path.resolve(chosen.replace(/^~/, homedir()));
 
@@ -166,21 +177,6 @@ async function getVaultPath(rl: readline.Interface, lang: Lang): Promise<string>
   }
 
   return resolved;
-}
-
-async function collectAnswers(
-  rl: readline.Interface,
-  vaultPath: string,
-  lang: Lang
-): Promise<InitAnswers> {
-  const prompts = msg.questions[lang];
-  const field = await ask(rl, prompts[0]);
-  const level = await ask(rl, prompts[1]);
-  const goal = await ask(rl, prompts[2]);
-  const learningStyle = await ask(rl, prompts[3]);
-  const deepInterest = await ask(rl, prompts[4]);
-
-  return { vaultPath, field, level, goal, learningStyle, deepInterest };
 }
 
 function createVaultStructure(vaultPath: string): void {
@@ -216,30 +212,14 @@ function createProfile(vaultPath: string, answers: InitAnswers): boolean {
   const profilePath = path.join(vaultPath, "MY-PROFILE.md");
   if (fs.existsSync(profilePath)) return false;
 
-  const content = [
-    "# MY-PROFILE",
-    "",
-    "## 분야",
-    answers.field || "(미입력)",
-    "",
-    "## 현재 수준",
-    answers.level || "(미입력)",
-    "",
-    "## 목표",
-    answers.goal || "(미입력)",
-    "",
-    "## 학습 스타일",
-    answers.learningStyle || "(미입력)",
-    "",
-    "## 깊이 파고 싶은 영역",
-    answers.deepInterest || "(미입력)",
-    "",
-    "## 메모",
-    "(자유롭게 추가하세요)",
-    "",
-  ].join("\n");
-
-  fs.writeFileSync(profilePath, content);
+  fs.writeFileSync(profilePath, buildProfileContent({
+    field: answers.field,
+    level: answers.level,
+    goal: answers.goal,
+    learningStyle: answers.learningStyle,
+    deepInterest: answers.deepInterest,
+    notes: "(자유롭게 추가하세요)",
+  }));
   console.log("  📄 MY-PROFILE.md");
   return true;
 }
@@ -264,11 +244,12 @@ export async function runInit() {
   runMigrations();
 
   const lang = systemLang();
-  const rl = createRL();
+  const rl = createReadline();
 
   try {
     const vaultPath = await getVaultPath(rl, lang);
-    const answers = await collectAnswers(rl, vaultPath, lang);
+    const profile = await promptProfileAnswers(rl, lang);
+    const answers: InitAnswers = { vaultPath, ...profile };
 
     console.log(t(msg.installing, lang));
 
@@ -277,9 +258,7 @@ export async function runInit() {
       const claudePath = execSync(whichCommand("claude"), { encoding: "utf-8" }).trim();
       console.log(`  ✅ ${claudePath}\n`);
     } catch {
-      for (const line of tLines(msg.cliNotFound, lang)) console.error(line);
-      console.error("");
-      process.exit(1);
+      throw new Error(tLines(msg.cliNotFound, lang).join("\n"));
     }
 
     console.log(t(msg.checkAuth, lang));
@@ -289,15 +268,12 @@ export async function runInit() {
     } else {
       const loginOk = doLogin();
       if (!loginOk) {
-        for (const line of tLines(msg.authFailed, lang)) console.error(line);
-        console.error("");
-        process.exit(1);
+        throw new Error(tLines(msg.authFailed, lang).join("\n"));
       }
 
       const after = checkAuthStatus();
       if (!after.loggedIn) {
-        console.error(t(msg.authVerifyFailed, lang));
-        process.exit(1);
+        throw new Error(t(msg.authVerifyFailed, lang).trim());
       }
       console.log(t(msg.authLoginDone(after.email ?? after.authMethod ?? ""), lang));
     }
@@ -314,8 +290,34 @@ export async function runInit() {
     console.log(t(msg.savingConfig, lang));
     saveConfig(vaultPath);
 
+    // hooks 설치
+    console.log(t(msg.hooksInstalling, lang));
+    let hooksInstalled = false;
+    if (isEphemeralInstall()) {
+      console.log(t(msg.hooksSkippedNpx, lang));
+    } else {
+      try {
+        await import("./hooks.js").then((m) => m.runHooks(["install"]));
+        hooksInstalled = true;
+      } catch {
+        console.log(t(msg.hooksFailed, lang));
+      }
+    }
+
+    // 과거 세션 수집
+    const collectAnswer = await askQuestion(rl, t(msg.collectPrompt, lang));
+    if (collectAnswer.toLowerCase() === "y") {
+      console.log(t(msg.collectRunning, lang));
+      try {
+        await import("./collect.js").then((m) => m.runCollect(["--all"]));
+      } catch {
+        console.log(t(msg.collectFailed, lang));
+      }
+    }
+
     console.log(t(msg.done, lang));
-    for (const line of tLines(msg.nextSteps, lang)) {
+    const steps = hooksInstalled ? msg.nextSteps : msg.nextStepsNoHooks;
+    for (const line of tLines(steps, lang)) {
       console.log(line);
     }
     console.log("");
@@ -325,5 +327,9 @@ export async function runInit() {
 }
 
 if (process.argv[1]?.endsWith("init.js")) {
-  runInit().catch(console.error);
+  runInit().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`\n❌ ${message}\n`);
+    process.exit(1);
+  });
 }

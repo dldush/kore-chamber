@@ -98,6 +98,26 @@ export function findLatestJsonl(sessionId?: string): string {
   return findAllJsonl(sessionId)[0].path;
 }
 
+export function getJsonlInfoByPath(jsonlPath: string, projectDir?: string): JsonlFileInfo {
+  const resolved = path.resolve(jsonlPath.replace(/^~/, homedir()));
+
+  if (!fs.existsSync(resolved)) {
+    throw new Error(`JSONL 파일을 찾을 수 없습니다: ${resolved}`);
+  }
+
+  if (!resolved.endsWith(".jsonl")) {
+    throw new Error(`JSONL 파일만 처리할 수 있습니다: ${resolved}`);
+  }
+
+  const stats = fs.statSync(resolved);
+  return {
+    path: resolved,
+    sessionId: path.basename(resolved, ".jsonl"),
+    mtime: stats.mtimeMs,
+    projectPath: inferProjectPath(resolved, projectDir),
+  };
+}
+
 // ─── Parse Session ───
 
 export function parseSession(jsonlPath: string): ConversationTurn[] {
@@ -172,4 +192,19 @@ export function formatConversation(turns: ConversationTurn[]): string {
   return turns
     .map((t) => `[${t.role === "user" ? "User" : "Assistant"}]\n${t.text}`)
     .join("\n\n---\n\n");
+}
+
+function inferProjectPath(jsonlPath: string, projectDir?: string): string {
+  if (projectDir) {
+    return path.basename(projectDir);
+  }
+
+  const projectsDir = path.join(homedir(), ".claude", "projects");
+  const relative = path.relative(projectsDir, jsonlPath);
+
+  if (!relative.startsWith("..")) {
+    return relative.split(path.sep)[0] || path.basename(path.dirname(jsonlPath));
+  }
+
+  return path.basename(path.dirname(jsonlPath));
 }
