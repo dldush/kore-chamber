@@ -6,14 +6,15 @@
 
 ### AI에게 나의 뇌를 선물하세요.
 
-[English](README.md)
+[English](README.md) · [Kore Protocol](PROTOCOL.md)
 
 > *"I know that I know nothing."* — Socrates
 
 ## 소개
 
-Kore Chamber는 Claude Code 대화를 Markdown 볼트에 축적하는 지식 관리 엔진입니다.  
-핵심은 "AI가 전부 처리하는 프롬프트 묶음"이 아니라, **결정적인 일은 TypeScript 코어가 처리하고 의미 해석만 AI가 담당하는 하이브리드 구조**라는 점입니다.
+Kore Chamber는 Claude Code 대화를 Markdown 볼트에 축적하고, **MCP 도구를 통해 AI가 자동으로 볼트를 검색·활용**할 수 있게 합니다.
+
+Phase 1에서 수집 파이프라인(TS 코어 + AI 하이브리드)을, Phase 2에서 **MCP 서버**(볼트를 Claude Code 도구로 노출)를, Phase 3에서 **지식 생명주기**(confidence + freshness)를, Phase 4에서 **Kore Protocol** 스펙을 구현했습니다.
 
 ### 무엇이 달라졌나
 
@@ -47,9 +48,30 @@ Kore Chamber는 Claude Code 대화를 Markdown 볼트에 축적하는 지식 관
   - 50-MOC
 ```
 
+### MCP 서버 — AI가 볼트를 자동으로 읽습니다
+
+설치하면 Kore Chamber가 **MCP 서버**로 Claude Code에 등록됩니다. Claude가 볼트를 검색하고 읽는 도구를 네이티브로 사용할 수 있습니다.
+
+| 도구 | 기능 |
+|------|------|
+| `kc_search` | 텍스트 쿼리로 노트 검색 (Jaccard + confidence 가중 랭킹) |
+| `kc_read` | 노트 전문 읽기 (last_referenced 갱신) |
+| `kc_profile` | 사용자 프로필 (MY-PROFILE.md) 반환 |
+| `kc_related` | Spreading Activation으로 관련 노트 탐색 |
+| `kc_status` | 볼트 통계 (노트 수, 신선도, confidence) |
+| `kc_moc_list` | MOC 목록 + 링크 수 |
+| `kc_moc_read` | MOC 내 노트 요약 반환 |
+
+### 지식 생명주기
+
+노트는 정적이지 않습니다 — 생명주기가 있습니다:
+
+- **Confidence** (0.0–1.0): 기본 0.5, merge마다 +0.1. 높을수록 검색에서 우선 노출.
+- **Freshness**: `last_referenced` 기준 — current (≤30일), aging (≤90일), stale (>90일).
+
 ### 한 줄 요약
 
-CLAUDE.md가 "작은 메모"라면, Kore Chamber는 **구조화된 개인 지식 그래프**입니다.
+CLAUDE.md가 "작은 메모"라면, Kore Chamber는 **AI가 직접 검색하는 구조화된 개인 지식 그래프**입니다.
 
 ## 설치방법
 
@@ -77,7 +99,8 @@ npx kore-chamber init
    - `~/.claude/skills/kc-collect/`
    - `~/.claude/agents/*.md`
 7. 볼트 접근 경로를 Claude Code 설정에 추가합니다.
-8. 전역 `~/.claude/CLAUDE.md`에 볼트 참조 규칙을 삽입합니다.
+8. MCP 서버를 `~/.claude/settings.json`에 등록합니다.
+9. 전역 `~/.claude/CLAUDE.md`에 볼트 참조 규칙을 삽입합니다.
 
 ### 2. 초기 프로필 생성
 
@@ -101,7 +124,7 @@ kore-chamber doctor
 npx kore-chamber@latest update
 ```
 
-`update`는 최신 명령/스킬/에이전트만 갱신하고, 기존 볼트와 설정은 유지합니다.
+`update`는 최신 명령/스킬/에이전트를 갱신하고, config 마이그레이션을 실행하며, MCP 서버 등록을 확인합니다.
 
 ## 사용방법
 
@@ -153,20 +176,25 @@ Kore Chamber는 세션 종료 시 무조건 자동 수집하지 않습니다.
 ```text
 src/
 ├── cli/
-│   ├── index.ts
+│   ├── index.ts        # 명령 라우터 (init, collect, doctor, status, update, mcp)
 │   ├── init.ts
 │   ├── update.ts
 │   ├── collect.ts
 │   ├── doctor.ts
 │   └── status.ts
+├── mcp/
+│   ├── server.ts       # MCP 서버 엔트리 (stdio transport)
+│   └── tools.ts        # 7개 MCP 도구 정의
 ├── core/
-│   ├── config.ts
+│   ├── config.ts       # 설정 로더 (볼트 경로, dedup 임계값)
+│   ├── migrate.ts      # Config 버전 마이그레이션
 │   ├── jsonl.ts
-│   ├── vault.ts
-│   ├── dedup.ts
+│   ├── vault.ts        # 노트 I/O + 생명주기 (confidence, freshness)
+│   ├── dedup.ts        # 한글 토크나이저 + Jaccard 유사도
 │   ├── slug.ts
 │   ├── moc.ts
-│   └── linker.ts
+│   ├── linker.ts       # Spreading Activation 검색
+│   └── platform.ts
 ├── llm/
 │   ├── claude.ts
 │   └── extract.ts
@@ -267,6 +295,8 @@ vault/
 - MOC 수
 - MOC에 연결되지 않은 orphan note 수
 - 존재하지 않는 위키링크 수
+- 신선도 분포 (current / aging / stale)
+- 평균 confidence 점수
 - 최근 수집 날짜
 
 ### 설계 원칙
@@ -276,6 +306,14 @@ vault/
 - **저장은 명시적으로**
 - **Markdown을 소스 오브 트루스로 유지**
 - **CLI 출력은 사람용 markdown과 기계용 JSON 둘 다 지원**
+- **지식에는 생명주기가 있다** — 강화된 지식은 우선 노출, 오래된 지식은 퇴색
+- **지시보다 도구** — CLAUDE.md 텍스트 지시보다 MCP 도구가 확실하다
+
+### Kore Protocol
+
+볼트 구조, frontmatter 스키마, 섹션 템플릿, 검색 프로토콜, MCP 도구 인터페이스를 독립 스펙으로 문서화했습니다: **[PROTOCOL.md](PROTOCOL.md)**.
+
+다른 AI 도구에서도 같은 볼트를 읽을 수 있게 하는 것이 목표입니다.
 
 ## License
 

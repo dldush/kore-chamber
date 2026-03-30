@@ -6,14 +6,15 @@
 
 ### Give your AI your brain.
 
-[한국어](README.ko.md)
+[한국어](README.ko.md) · [Kore Protocol](PROTOCOL.md)
 
 > *"I know that I know nothing."* — Socrates
 
 ## Introduction
 
-Kore Chamber stores Claude Code conversations into a Markdown knowledge vault.  
-The key shift in Phase 1 is that it is no longer an AI-only prompt pipeline. It is now a **hybrid system where deterministic work is handled by a TypeScript core engine and AI is reserved for semantic judgment**.
+Kore Chamber stores Claude Code conversations into a Markdown knowledge vault, and **serves that knowledge back to AI through MCP tools**.
+
+Phase 1 built the collection pipeline — a hybrid system where deterministic work is handled by TypeScript and AI handles semantic judgment. Phase 2 added the **MCP server** so Claude Code can search and read the vault as a native tool. Phase 3 introduced **knowledge lifecycle** tracking (confidence + freshness). Phase 4 published the **Kore Protocol** specification.
 
 ### What changed
 
@@ -47,9 +48,30 @@ The key shift in Phase 1 is that it is no longer an AI-only prompt pipeline. It 
   - 50-MOC
 ```
 
+### MCP Server — AI reads your vault automatically
+
+Once installed, Kore Chamber registers as a **MCP server** in Claude Code. This means Claude has native tools to search and read your vault — no manual instructions needed.
+
+| Tool | Purpose |
+|------|---------|
+| `kc_search` | Search notes by text query (Jaccard + confidence-weighted ranking) |
+| `kc_read` | Read full note content (updates last_referenced) |
+| `kc_profile` | Read user profile (MY-PROFILE.md) |
+| `kc_related` | Find related notes via Spreading Activation |
+| `kc_status` | Vault statistics (counts, freshness, confidence) |
+| `kc_moc_list` | List all MOCs with link counts |
+| `kc_moc_read` | Read MOC contents with note summaries |
+
+### Knowledge lifecycle
+
+Notes are not static — they have a lifecycle:
+
+- **Confidence** (0.0–1.0): starts at 0.5, increases by 0.1 on each merge. High-confidence notes rank higher in search.
+- **Freshness**: `current` (≤30 days), `aging` (≤90 days), `stale` (>90 days) based on `last_referenced`.
+
 ### One-line summary
 
-If `CLAUDE.md` is a sticky note, Kore Chamber is a **structured personal knowledge graph**.
+If `CLAUDE.md` is a sticky note, Kore Chamber is a **structured personal knowledge graph with an AI-native retrieval layer**.
 
 ## Installation
 
@@ -77,7 +99,8 @@ npx kore-chamber init
    - `~/.claude/skills/kc-collect/`
    - `~/.claude/agents/*.md`
 7. Adds your vault path to Claude Code settings
-8. Inserts global vault reference rules into `~/.claude/CLAUDE.md`
+8. Registers the MCP server in `~/.claude/settings.json`
+9. Inserts global vault reference rules into `~/.claude/CLAUDE.md`
 
 ### 2. Generate the initial profile
 
@@ -101,7 +124,7 @@ kore-chamber doctor
 npx kore-chamber@latest update
 ```
 
-`update` refreshes commands, skills, and agents without touching your vault or config.
+`update` refreshes commands, skills, and agents, runs config migrations, and ensures the MCP server is registered.
 
 ## Usage
 
@@ -153,20 +176,25 @@ This is deliberate. The user should control when knowledge is persisted to avoid
 ```text
 src/
 ├── cli/
-│   ├── index.ts
+│   ├── index.ts        # Command router (init, collect, doctor, status, update, mcp)
 │   ├── init.ts
 │   ├── update.ts
 │   ├── collect.ts
 │   ├── doctor.ts
 │   └── status.ts
+├── mcp/
+│   ├── server.ts       # MCP server entry (stdio transport)
+│   └── tools.ts        # 7 MCP tool definitions
 ├── core/
-│   ├── config.ts
+│   ├── config.ts       # Config loader (vault path, dedup thresholds)
+│   ├── migrate.ts      # Config version migrations
 │   ├── jsonl.ts
-│   ├── vault.ts
-│   ├── dedup.ts
+│   ├── vault.ts        # Note I/O + lifecycle (confidence, freshness)
+│   ├── dedup.ts        # Korean-aware tokenizer + Jaccard similarity
 │   ├── slug.ts
 │   ├── moc.ts
-│   └── linker.ts
+│   ├── linker.ts       # Spreading Activation search
+│   └── platform.ts
 ├── llm/
 │   ├── claude.ts
 │   └── extract.ts
@@ -268,6 +296,8 @@ vault/
 - MOC count
 - orphan notes not linked from any MOC
 - broken wiki-links
+- freshness distribution (current / aging / stale)
+- average confidence score
 - latest collection date
 
 ### Design principles
@@ -277,6 +307,14 @@ vault/
 - **collection should be explicit**
 - **Markdown remains the source of truth**
 - **CLI should support both markdown and JSON output**
+- **knowledge has a lifecycle** — reinforced knowledge ranks higher, stale knowledge fades
+- **tools over instructions** — MCP tools are more reliable than CLAUDE.md text directives
+
+### Kore Protocol
+
+The vault structure, frontmatter schema, section templates, search protocol, and retrieval API are documented as a standalone specification: **[PROTOCOL.md](PROTOCOL.md)**.
+
+This enables other AI tools to read the same vault without reimplementation.
 
 ## License
 
